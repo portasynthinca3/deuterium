@@ -85,7 +85,7 @@ def load_channel(id):
 # generates a message
 async def generate_channel(id):
     generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
-    if generated_msg == None or len(generated_msg.replace(' ',).strip()) == 0:
+    if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
         return ':x: **The model for this channel had been trained on too little messages to generate sensible messages. Try speaking for longer and check back again**'
     else:
         return generated_msg
