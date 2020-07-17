@@ -71,7 +71,8 @@ def save_channel(id):
     global channels
     with open(f'channels/{str(id)}.json', 'w') as f:
         to_jsonify = channels[id].copy()
-        to_jsonify['model'] = to_jsonify['model'].to_dict()
+        if to_jsonify['model'] != None:
+            to_jsonify['model'] = to_jsonify['model'].to_dict()
         json.dump(to_jsonify, f)
 
 # loads channel settings and model
@@ -79,7 +80,8 @@ def load_channel(id):
     global channels
     with open(f'channels/{str(id)}.json', 'r') as f:
         jsonified = json.load(f)
-        jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
+        if jsonified['model'] != None:
+            jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
         channels[id] = jsonified
 
 # generates a message
