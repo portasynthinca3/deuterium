@@ -10,7 +10,7 @@ HELP = '''
 `/d collect yes/no` - allow/disallow collecting messages for this channel
 `/d gen` - immediately generate a message
 `/d privacy` - send the privacy policy
-`/d reset` - resets training data for this channel
+`/d reset` - reset training data for this channel
 `/d autorate rate` - sets the rate at which the bot would automatically generate messages (set to 0 do disable)
 '''
 
