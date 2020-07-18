@@ -239,6 +239,8 @@ class Deuterium(discord.Client):
             else:
                 await msg.channel.send(':x: **Unknown command - type `/d help` for help**')
 
+            return # don't train on commands
+
         # it's an ordinary message and not a command
         # train on this message if allowed
         if channels[chan_id]['collect']:
