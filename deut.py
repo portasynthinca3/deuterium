@@ -124,7 +124,7 @@ class Deuterium(discord.Client):
 
         # create a new channel object if it doesn't exist
         if chan_id not in channels:
-            channels[chan_id] = {'model':None, 'collect':True, 'collected':0, 'autorate':20}
+            channels[chan_id] = {'model':None, 'collect':True, 'collected':0, 'autorate':20, 'total_msgs':0}
 
         # check if it's a command
         if msg.content.startswith('/d '):
@@ -204,12 +204,18 @@ class Deuterium(discord.Client):
 
             # increment the number of collected messages
             channels[chan_id]['collected'] += 1
+            
 
-            # generate a message if needed
-            if channels[chan_id]['autorate'] > 0 and channels[chan_id]['collected'] % channels[chan_id]['autorate'] == 0:
-                await msg.channel.send(await generate_channel(chan_id))
+        # generate a message if needed
+        if 'total_msgs' not in channels[chan_id]:
+            channels[chan_id]['total_msgs'] = 0
+        if channels[chan_id]['autorate'] > 0 and channels[chan_id]['total_msgs'] % channels[chan_id]['autorate'] == 0:
+            await msg.channel.send(await generate_channel(chan_id))
 
-            save_channel(chan_id)
+        channels[chan_id]['total_msgs'] += 1
+            
+        save_channel(chan_id)
+
 
 # create the client
 deut = Deuterium()
