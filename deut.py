@@ -6,7 +6,7 @@
 HELP = '''
 **Deuterium commands**
 `/d help` - send this message
-`/d status` - print the information about this channel
+`/d status` - print the information about this channel and the global model
 `/d collect yes/no` - allow/disallow collecting messages for this channel
 `/d gcollect yes/no` - allow/disallow collecting messages from this this channel to contribute to the global model
 `/d gen` - immediately generate a message
