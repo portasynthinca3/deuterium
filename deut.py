@@ -14,6 +14,7 @@ HELP = '''
 `/d privacy` - send the privacy policy
 `/d reset` - reset training data for this channel
 `/d autorate rate` - sets the rate at which the bot would automatically generate messages (set to 0 do disable)
+`/d uwu enable/disable` - enables/disables UwU mode
 '''
 
 PRIVACY = '''
@@ -42,7 +43,7 @@ You can contact me through Discord (`portasynthinca3#1746`), E-Mail (`portasynth
 GEN_FAILURE = ':x: **The model for this channel had been trained on too little messages to generate sensible messages. Try speaking for longer and check back again later**'
 
 # try importing libraries
-import os, json
+import os, json, random
 
 try:
     import markovify
@@ -89,13 +90,21 @@ def load_channel(id):
         channels[id] = jsonified
 
 # generates a message
-def generate_channel(id):
+def generate_channel(id, act_id):
     if channels[id]['model'] == None:
         return GEN_FAILURE
 
     generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
     if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
         return GEN_FAILURE
+
+    # apply the (optional) UwU filter
+    if channels[act_id]['uwumode']:
+        generated_msg = generated_msg.replace('r', 'w')
+        generated_msg = generated_msg.replace('R', 'W')
+        generated_msg = generated_msg.replace('l', 'ww')
+        generated_msg = generated_msg.replace('L', 'WW')
+        generated_msg += ' UwU~' if bool(random.getrandbits(1)) else ' OwO~'
 
     return generated_msg
 
@@ -156,7 +165,14 @@ class Deuterium(discord.Client):
             channels[chan_id] = {'model':None,
                                  'collect':True, 'collected':0,
                                  'autorate':20, 'total_msgs':0,
-                                 'gcollect':True, 'gcollected':0}
+                                 'gcollect':True, 'gcollected':0,
+                                 'uwumode':False}
+
+        # add fields that appeared in newer versions of the bot
+        if 'total_msgs' not in channels[chan_id]:
+            channels[chan_id]['total_msgs'] = 0
+        if 'uwumode' not in channels[chan_id]:
+            channels[chan_id]['uwumode'] = False
 
         # check if it's a command
         if msg.content.startswith('/d '):
@@ -172,10 +188,11 @@ class Deuterium(discord.Client):
                 autorate = channels[chan_id]['autorate']
                 status_msg = ('Collecting messages from this channel: **' + ('yes' if channels[chan_id]['collect'] else 'no') + '**\n'
                               'Total collected messages: **' + str(channels[chan_id]['collected']) + '**\n'
-                              'Automatically sending messages after: **' + str('disabled' if autorate == 0 else autorate) + '**\n'
                               'Contributing to the global model: **' + ('yes' if channels[chan_id]['gcollect'] else 'no') + '**\n'
                               'Messages contributed to the global model: **' + str(channels[chan_id]['gcollected']) + '**\n'
-                              'Messages contributed to the global model by everyone: **' + str(channels[0]['collected']) + '**\n')
+                              'Messages contributed to the global model by everyone: **' + str(channels[0]['collected']) + '**\n'
+                              'Automatically sending messages after: **' + str('disabled' if autorate == 0 else autorate) + '**\n'
+                              'UwU mode: **' + ('enabled' if channels[chan_id]['uwumode'] else 'disabled') + '**\n')
                 await msg.channel.send(status_msg)
 
             elif cmd == 'collect':
@@ -202,11 +219,23 @@ class Deuterium(discord.Client):
                         await msg.channel.send('**Successfully set permissions for this channel** :white_check_mark:')
                         save_channel(chan_id)
 
+            elif cmd == 'uwu':
+                if len(args) != 1:
+                    await msg.channel.send(':x: **This command requires one argument - type `/d help` for help**')
+                else:
+                    uwu = args[0]
+                    if uwu not in ['enable', 'disable']:
+                        await msg.channel.send(':x: **(One of) the argument(s) is(/are) invalid - type `/d help` for help**')
+                    else:
+                        channels[chan_id]['uwumode'] = True if uwu == 'enable' else False
+                        await msg.channel.send('**Successfully updated settings for this channel** :white_check_mark:')
+                        save_channel(chan_id)
+
             elif cmd == 'gen':
-                await msg.channel.send(generate_channel(chan_id))
+                await msg.channel.send(generate_channel(chan_id, chan_id))
 
             elif cmd == 'ggen':
-                await msg.channel.send(generate_channel(0))
+                await msg.channel.send(generate_channel(0, chan_id))
 
             elif cmd == 'privacy':
                 await msg.channel.send(PRIVACY)
@@ -252,10 +281,8 @@ class Deuterium(discord.Client):
             channels[chan_id]['gcollected'] += 1
 
         # generate a message if needed
-        if 'total_msgs' not in channels[chan_id]:
-            channels[chan_id]['total_msgs'] = 0
         if channels[chan_id]['autorate'] > 0 and channels[chan_id]['total_msgs'] % channels[chan_id]['autorate'] == 0:
-            await msg.channel.send(generate_channel(chan_id))
+            await msg.channel.send(generate_channel(chan_id, chan_id))
 
         channels[chan_id]['total_msgs'] += 1
             
