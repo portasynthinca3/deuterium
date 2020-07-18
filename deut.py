@@ -8,7 +8,9 @@ HELP = '''
 `/d help` - send this message
 `/d status` - print the information about this channel
 `/d collect yes/no` - allow/disallow collecting messages for this channel
+`/d gcollect yes/no` - allow/disallow collecting messages from this this channel to contribute to the global model
 `/d gen` - immediately generate a message
+`/d ggen` - immediately generate a message using the global model
 `/d privacy` - send the privacy policy
 `/d reset` - reset training data for this channel
 `/d autorate rate` - sets the rate at which the bot would automatically generate messages (set to 0 do disable)
@@ -36,6 +38,8 @@ Deuterium does _not_ store the following data:
 **5. CONTACTING**
 You can contact me through Discord (`portasynthinca3#1746`), E-Mail (`portasynthinca3@gmail.com`), or GitHub (`@portasynthinca3`)
 '''
+
+GEN_FAILURE = ':x: **The model for this channel had been trained on too little messages to generate sensible messages. Try speaking for longer and check back again later**'
 
 # try importing libraries
 import os, json
@@ -85,12 +89,35 @@ def load_channel(id):
         channels[id] = jsonified
 
 # generates a message
-async def generate_channel(id):
+def generate_channel(id):
+    if channels[id]['model'] == None:
+        return GEN_FAILURE
+
     generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
     if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
-        return ':x: **The model for this channel had been trained on too little messages to generate sensible messages. Try speaking for longer and check back again**'
-    else:
-        return generated_msg
+        return GEN_FAILURE
+
+    return generated_msg
+
+
+# trans a model on a message
+def train(id, text):
+    # join period-separated sentences by a new line
+    text = '\n'.join(text.split('.'))
+
+    # create a new model if it doesn't exist
+    if channels[id]['model'] == None:
+        channels[id]['model'] = markovify.NewlineText(text)
+
+    # create a model with this message and combine it with the already existing one ("train" the model)
+    new_model = markovify.NewlineText(text)
+    channels[id]['model'] = markovify.combine([channels[id]['model'], new_model])
+
+    # increment the number of collected messages
+    channels[id]['collected'] += 1
+
+    # save the model to disk
+    save_channel(id)
 
 # the main client class
 class Deuterium(discord.Client):
@@ -98,6 +125,8 @@ class Deuterium(discord.Client):
     async def on_ready(self):
         global SELF_ID
         SELF_ID = self.user.id
+
+        load_channel(0)
 
         await self.change_presence(activity=discord.Game(name='markov chains'))
         print('Everything OK!')
@@ -124,7 +153,10 @@ class Deuterium(discord.Client):
 
         # create a new channel object if it doesn't exist
         if chan_id not in channels:
-            channels[chan_id] = {'model':None, 'collect':True, 'collected':0, 'autorate':20, 'total_msgs':0}
+            channels[chan_id] = {'model':None,
+                                 'collect':True, 'collected':0,
+                                 'autorate':20, 'total_msgs':0,
+                                 'gcollect':True, 'gcollected':0}
 
         # check if it's a command
         if msg.content.startswith('/d '):
@@ -140,7 +172,10 @@ class Deuterium(discord.Client):
                 autorate = channels[chan_id]['autorate']
                 status_msg = ('Collecting messages from this channel: **' + ('yes' if channels[chan_id]['collect'] else 'no') + '**\n'
                               'Total collected messages: **' + str(channels[chan_id]['collected']) + '**\n'
-                              'Automatically sending messages after: **' + str('disabled' if autorate == 0 else autorate) + '**')
+                              'Automatically sending messages after: **' + str('disabled' if autorate == 0 else autorate) + '**\n'
+                              'Contributing to the global model: **' + ('yes' if channels[chan_id]['gcollect'] else 'no') + '**\n'
+                              'Messages contributed to the global model: **' + str(channels[chan_id]['gcollected']) + '**\n'
+                              'Messages contributed to the global model by everyone: **' + str(channels[0]['collected']) + '**\n')
                 await msg.channel.send(status_msg)
 
             elif cmd == 'collect':
@@ -155,8 +190,23 @@ class Deuterium(discord.Client):
                         await msg.channel.send('**Successfully set permissions for this channel** :white_check_mark:')
                         save_channel(chan_id)
 
+            elif cmd == 'gcollect':
+                if len(args) != 1:
+                    await msg.channel.send(':x: **This command requires one argument - type `/d help` for help**')
+                else:
+                    collect = args[0]
+                    if collect not in ['yes', 'no']:
+                        await msg.channel.send(':x: **(One of) the argument(s) is(/are) invalid - type `/d help` for help**')
+                    else:
+                        channels[chan_id]['gcollect'] = True if collect == 'yes' else False
+                        await msg.channel.send('**Successfully set permissions for this channel** :white_check_mark:')
+                        save_channel(chan_id)
+
             elif cmd == 'gen':
-                await msg.channel.send(await generate_channel(chan_id))
+                await msg.channel.send(generate_channel(chan_id))
+
+            elif cmd == 'ggen':
+                await msg.channel.send(generate_channel(0))
 
             elif cmd == 'privacy':
                 await msg.channel.send(PRIVACY)
@@ -190,32 +240,24 @@ class Deuterium(discord.Client):
                 await msg.channel.send(':x: **Unknown command - type `/d help` for help**')
 
         # it's an ordinary message and not a command
-        elif channels[chan_id]['collect']:
-            # join period-separated spaces by a new line
-            text = '\n'.join(msg.content.split('.'))
+        # train on this message if allowed
+        if channels[chan_id]['collect']:
+            train(chan_id, msg.content)
 
-            # create a new markov model if it doesn't exist
-            if channels[chan_id]['model'] == None:
-                channels[chan_id]['model'] = markovify.NewlineText(text)
-    
-            # create a model with this message and combine it with the already existing one ("train" the model)
-            new_model = markovify.NewlineText(text)
-            channels[chan_id]['model'] = markovify.combine([channels[chan_id]['model'], new_model])
-
-            # increment the number of collected messages
-            channels[chan_id]['collected'] += 1
-            
+        # train the global model if allowed
+        if channels[chan_id]['gcollect']:
+            train(0, msg.content)
+            channels[chan_id]['gcollected'] += 1
 
         # generate a message if needed
         if 'total_msgs' not in channels[chan_id]:
             channels[chan_id]['total_msgs'] = 0
         if channels[chan_id]['autorate'] > 0 and channels[chan_id]['total_msgs'] % channels[chan_id]['autorate'] == 0:
-            await msg.channel.send(await generate_channel(chan_id))
+            await msg.channel.send(generate_channel(chan_id))
 
         channels[chan_id]['total_msgs'] += 1
             
         save_channel(chan_id)
-
 
 # create the client
 deut = Deuterium()
