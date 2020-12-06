@@ -20,6 +20,7 @@ HELP = '''
 `/d donate` - send donation information
 `/d privacy` - send the privacy policy
 `/d uwu enable/disable` - enables/disables the UwU mode
+`/d info` - who the heck is behind this thing!?
 **Notice**
 I didn't expect this surge of users when I created this bot. As such, I can't keep up with the amount of users I have anymore, this project requires a more powerful server. Please consider donating (**`/d donate`**).
 '''
@@ -29,6 +30,14 @@ We appreciate your will to support us! It really helps us keep our servers runni
 Patreon: https://patreon.com/portasynthinca3
 '''
 
+BOT_INFO = '''
+Hi!
+This project was created by portasynthinca3 (https://github.com/portasynthinca3).
+The sort of "backbone" of it is the markovify (https://github.com/jsvine/markovify) library.
+You can join our support server if you're experiencing any issues: https://discord.gg/N52uWgD
+'''
+
+UNKNOWN_CMD      = ':x: **Unknown command - type `/d help` for help**'
 GEN_FAILURE      = ':x: **The model for this channel has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
 INVALID_ARG      = ':x: **(One of) the argument(s) is(/are) invalid - see `/d help` for help**'
 ONE_ARG          = ':x: **This command requires one argument - see `/d help` for help**'
@@ -37,12 +46,12 @@ SETS_UPD         = '**Settings updated successfully** :white_check_mark:'
 INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
 INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
 RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
-JSON_DEC_FAILURE = ':x: **The model failed to load from disk, proably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or contact the bot creator (`duck🦆#1746`)**'
+JSON_DEC_FAILURE = ':x: **The model failed to load, proably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our supprot server (https://discord.gg/N52uWgD)**'
 
 BATCH_SIZE = 100
 
 # try importing libraries
-import sys, os, threading, re
+import sys, os, threading, re, atexit
 import requests, json, gzip
 import math, random
 import time
@@ -66,7 +75,7 @@ except ImportError:
 
 # check if there is a token in the environment variable list
 if 'DEUT_TOKEN' not in os.environ:
-    print('No bot token in the list of environment variables')
+    print('No bot token (BEUT_TOKEN) in the list of environment variables')
     exit()
 TOKEN = os.environ['DEUT_TOKEN']
 
@@ -123,6 +132,9 @@ def schedule_unload(id):
 
 # unloads a channel from memory
 def unload_channel(id):
+    if id == 0:
+        return
+
     save_channel(id)
     channels.pop(id, {})
 
@@ -192,6 +204,8 @@ async def generate_channel(id, act_id):
     if id == 0:
         generated_msg = re.sub('<(@|&)!*[0-9]*>', '**[mention removed]**', generated_msg)
 
+    print(' G ', id)
+
     return generated_msg
 
 # generates a message and sends it in a separate thread
@@ -217,6 +231,9 @@ def train(id, text):
 
         # increment the number of collected messages
         channels[id]['collected'] += 1
+
+        print(' + ', id)
+            
     except:
         pass
 
@@ -229,6 +246,16 @@ def train_on_prev(chan_id, limit):
 # the main client class
 class Deuterium(discord.Client):
 
+    def on_bot_exit(self):
+        # Thank you
+        # I'll say goodbye soon
+        # Though it's the end of the world
+        # Don't blame yourself, no
+        print('<-> CLOSING')
+        for chan_id in channels:
+            save_channel(chan_id)
+        save_channel(0)
+
     async def on_ready(self):
         global SELF_ID
         SELF_ID = self.user.id
@@ -237,6 +264,8 @@ class Deuterium(discord.Client):
 
         await self.change_presence(activity=discord.Game(name='with markov chains'))
         print('Everything OK!')
+
+        atexit.register(self.on_bot_exit)
 
     async def on_message(self, msg):
         global channels, SELF_ID
@@ -296,6 +325,7 @@ class Deuterium(discord.Client):
                 embed.add_field(inline=True, name='Messages contributed to the global model by everyone everywhere', value=str(channels[0]['collected']))
                 embed.add_field(inline=True, name='Automatically sending messages after each',                       value=str('[disabled]' if autorate == 0 else autorate))
                 embed.add_field(inline=True, name='UwU mode',                                                        value='enabled' if channels[chan_id]['uwumode'] else 'disabled')
+                embed.add_field(inline=True, name='Notice',                                                          value='Please see `/d help`')
                 await msg.channel.send(embed=embed)
 
             elif cmd == 'collect':
@@ -421,8 +451,11 @@ I do not disclose collected data to any third parties. Furthermore, I do not loo
                             else:
                                 await msg.channel.send(f'**Auto-generation rate set to {str(autorate)}** :white_check_mark:')
 
+            elif cmd == 'info':
+                await msg.channel.send(BOT_INFO)
+
             else:
-                await msg.channel.send(':x: **Unknown command - type `/d help` for help**')
+                await msg.channel.send(UNKNOWN_CMD)
 
             return # don't train on commands
 
