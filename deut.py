@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pypy3
 
 # Deuterium Discord bot created by portasynthinca3
 # https://github.com/portasynthinca3/deuterium
@@ -20,6 +20,8 @@ HELP = '''
 `/d donate` - send donation information
 `/d privacy` - send the privacy policy
 `/d uwu enable/disable` - enables/disables the UwU mode
+**Notice**
+I didn't expect this surge of users when I created this bot. As such, I can't keep up with the amount of users I have anymore, this project requires a more powerful server. Please consider donating (**`/d donate`**).
 '''
 
 DONATING = '''
@@ -27,24 +29,28 @@ We appreciate your will to support us! It really helps us keep our servers runni
 Patreon: https://patreon.com/portasynthinca3
 '''
 
-GEN_FAILURE     = ':x: **The model for this channel has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
-INVALID_ARG     = ':x: **(One of) the argument(s) is(/are) invalid - see `/d help` for help**'
-ONE_ARG         = ':x: **This command requires one argument - see `/d help` for help**'
-LEQ_ONE_ARG     = ':x: **This command requires zero or one arguments - see `/d help` for help**'
-SETS_UPD        = '**Settings updated successfully** :white_check_mark:'
-INVALID_CHANNEL = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
-INVALID_MSG_CNT = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
-RETRIEVING_MSGS = '**Training. It will take some time, be patient** :white_check_mark:'
+GEN_FAILURE      = ':x: **The model for this channel has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
+INVALID_ARG      = ':x: **(One of) the argument(s) is(/are) invalid - see `/d help` for help**'
+ONE_ARG          = ':x: **This command requires one argument - see `/d help` for help**'
+LEQ_ONE_ARG      = ':x: **This command requires zero or one arguments - see `/d help` for help**'
+SETS_UPD         = '**Settings updated successfully** :white_check_mark:'
+INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
+INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
+RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
+JSON_DEC_FAILURE = ':x: **The model failed to load from disk, proably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or contact the bot creator (`duck🦆#1746`)**'
 
 BATCH_SIZE = 100
 
 # try importing libraries
 import sys, os, threading, re
-import requests, json
+import requests, json, gzip
 import math, random
 import time
 import asyncio
 from threading import Thread
+from multiprocessing import Process
+from discord.errors import Forbidden
+from json import JSONDecodeError
 
 try:
     import markovify
@@ -71,6 +77,8 @@ if not os.path.exists('channels'):
 # some global variables
 SELF_ID = None
 channels = {}
+chanel_timers = {}
+channel_limits = {}
 
 # retrieves messages from a channel
 def getMsgs(channel, before, limit):
@@ -99,30 +107,66 @@ def getMsgs(channel, before, limit):
     # return simplified data
     return [{'id':int(x['id']), 'content':x['content']} for x in response]
 
+# sets a unload timer
+def schedule_unload(id):
+    if id == 0:
+        return
+
+    timer = chanel_timers.pop(id, None)
+
+    if timer is not None:
+        timer.cancel()
+
+    timer = threading.Timer(30, unload_channel, (id,))
+    timer.start()
+    chanel_timers[id] = timer
+
+# unloads a channel from memory
+def unload_channel(id):
+    save_channel(id)
+    channels.pop(id, {})
+
+    print('X-X', id) # unloaded
+
 # saves channel settings and model
 def save_channel(id):
     global channels
-    with open(f'channels/{str(id)}.json', 'w') as f:
+    with gzip.open(f'channels/{str(id)}.json.gz', 'wb') as f:
         to_jsonify = channels[id].copy()
         if to_jsonify['model'] != None:
             to_jsonify['model'] = to_jsonify['model'].to_dict()
-        json.dump(to_jsonify, f)
+        f.write(json.dumps(to_jsonify).encode('utf-8'))
+
+    print('<--', id) # dumped
+
+def channel_exists(id):
+    return os.path.exists(f'channels/{str(id)}.json.gz')
 
 # loads channel settings and model
-def load_channel(id):
+async def load_channel(id, channel):
     global channels
-    with open(f'channels/{str(id)}.json', 'r') as f:
-        jsonified = json.load(f)
-        if jsonified['model'] != None:
-            jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
-        channels[id] = jsonified
+    with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
+        try:
+            jsonified = json.loads(f.read().decode('utf-8'))
+
+            if jsonified['model'] != None:
+                jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
+            channels[id] = jsonified
+
+        except JSONDecodeError:
+            print('!!!', id) # failed to load
+            if channel is not None:
+                await channel.send(JSON_DEC_FAILURE)
+                return
+
+    print('-->', id) # loaded
 
 # generates a message
-def generate_channel(id, act_id):
+async def generate_channel(id, act_id):
     global channels
 
-    if os.path.exists(f'channels/{str(id)}.json') and id not in channels:
-        load_channel(id)
+    if channel_exists(id) and id not in channels:
+        await load_channel(id, None)
 
     if channels[id]['model'] == None:
         return GEN_FAILURE
@@ -150,6 +194,13 @@ def generate_channel(id, act_id):
 
     return generated_msg
 
+# generates a message and sends it in a separate thread
+async def generate_channel_threaded(id, act_id, chan):
+    try:
+        await chan.send(await generate_channel(id, act_id))
+    except Forbidden:
+        pass
+
 # trans a model on a message
 def train(id, text):
     try:
@@ -166,9 +217,6 @@ def train(id, text):
 
         # increment the number of collected messages
         channels[id]['collected'] += 1
-
-        # save the model to disk
-        save_channel(id)
     except:
         pass
 
@@ -185,7 +233,7 @@ class Deuterium(discord.Client):
         global SELF_ID
         SELF_ID = self.user.id
 
-        load_channel(0)
+        await load_channel(0, None)
 
         await self.change_presence(activity=discord.Game(name='with markov chains'))
         print('Everything OK!')
@@ -211,8 +259,8 @@ class Deuterium(discord.Client):
 
         # load channel settings and model from the disk if available and needed
         chan_id = msg.channel.id
-        if os.path.exists(f'channels/{str(chan_id)}.json') and chan_id not in channels:
-            load_channel(chan_id)
+        if channel_exists(chan_id) and chan_id not in channels:
+            await load_channel(chan_id, msg.channel)
 
         # create a new channel object if it doesn't exist
         if chan_id not in channels:
@@ -260,7 +308,6 @@ class Deuterium(discord.Client):
                     else:
                         channels[chan_id]['collect'] = True if collect == 'yes' else False
                         await msg.channel.send(SETS_UPD)
-                        save_channel(chan_id)
 
             elif cmd == 'gcollect':
                 if len(args) != 1:
@@ -272,7 +319,6 @@ class Deuterium(discord.Client):
                     else:
                         channels[chan_id]['gcollect'] = True if collect == 'yes' else False
                         await msg.channel.send(SETS_UPD)
-                        save_channel(chan_id)
 
             elif cmd == 'uwu':
                 if len(args) != 1:
@@ -284,22 +330,21 @@ class Deuterium(discord.Client):
                     else:
                         channels[chan_id]['uwumode'] = True if uwu == 'enable' else False
                         await msg.channel.send(SETS_UPD)
-                        save_channel(chan_id)
 
             elif cmd == 'gen':
                 if len(args) == 0:
-                    await msg.channel.send(generate_channel(chan_id, chan_id))
+                    await generate_channel_threaded(chan_id, chan_id, msg.channel)
                 elif len(args) == 1:
                     try:
                         target_cid = int(args[0][2:-1])
-                        await msg.channel.send(generate_channel(target_cid, chan_id))
+                        await generate_channel_threaded(target_cid, chan_id, msg.channel)
                     except:
                         await msg.channel.send(INVALID_CHANNEL)
                 else:
                     await msg.channel.send(LEQ_ONE_ARG)
 
             elif cmd == 'ggen':
-                await msg.channel.send(generate_channel(0, chan_id))
+                await generate_channel_threaded(0, chan_id, msg.channel)
 
             elif cmd == 'privacy':
                 embed = discord.Embed(title='Deuterium Privacy Policy', color=0xe6f916)
@@ -371,7 +416,6 @@ I do not disclose collected data to any third parties. Furthermore, I do not loo
                             await msg.channel.send(INVALID_ARG)
                         else:
                             channels[chan_id]['autorate'] = autorate
-                            save_channel(chan_id)
                             if autorate == 0:
                                 await msg.channel.send('**Auto-generation disabled** :white_check_mark:')
                             else:
@@ -394,11 +438,11 @@ I do not disclose collected data to any third parties. Furthermore, I do not loo
 
         # generate a message if needed
         if channels[chan_id]['autorate'] > 0 and channels[chan_id]['total_msgs'] % channels[chan_id]['autorate'] == 0:
-            await msg.channel.send(generate_channel(chan_id, chan_id))
+            await generate_channel_threaded(chan_id, chan_id, msg.channel)
 
         channels[chan_id]['total_msgs'] += 1
-            
-        save_channel(chan_id)
+
+        schedule_unload(chan_id)
 
 # create the client
 deut = Deuterium()
