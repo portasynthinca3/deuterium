@@ -5,29 +5,10 @@
 # See README.md, section "using" for license details
 
 # constant messages
-HELP = '''
-**Deuterium commands**
-`/d help` - send this message
-`/d status` - tells you everything about this bot and what it knows about this channel
-`/d train "limit"` - trains the model on the last "limit" messages in this channel
-`/d collect yes/no` - allow/deny collecting messages for this channel
-`/d gcollect yes/no` - allow/deny collecting messages from this this channel to contribute to the global model
-`/d reset` - reset training data for this channel
-`/d autorate "rate"` - sets the rate at which the bot would automatically generate messages (one after each "rate") (set to 0 do disable)
-`/d gen` - immediately generate a message
-`/d gen #channel-mention` - immediately generate a message using the model of the mentioned channel
-`/d ggen` - immediately generate a message using the global model
-`/d donate` - send donation information
-`/d privacy` - send the privacy policy
-`/d uwu enable/disable` - enables/disables the UwU mode
-`/d info` - who the heck is behind this thing!?
-**Notice**
-I didn't expect this surge of users when I created this bot. As such, I can't keep up with the amount of users I have anymore, this project requires a more powerful server. Please consider donating (**`/d donate`**).
-'''
-
-DONATING = '''
-We appreciate your will to support us! It really helps us keep our servers running.
-Patreon: https://patreon.com/portasynthinca3
+SUPPORTING = '''
+You can tell your friends about this bot, as well as:
+Vote for it on DBL: https://top.gg/bot/733605243396554813/vote
+Donate money on Patreon: https://patreon.com/portasynthinca3
 '''
 
 BOT_INFO = '''
@@ -37,8 +18,12 @@ The sort of "backbone" of it is the markovify (https://github.com/jsvine/markovi
 You can join our support server if you're experiencing any issues: https://discord.gg/N52uWgD
 '''
 
+NOTICE = '''
+I didn't expect this surge of users when I created this bot. As such, I can't keep up with the amount of users I have anymore, this project requires a more powerful server. Please consider supporting us (**`/d support`**).
+'''
+
 UNKNOWN_CMD      = ':x: **Unknown command - type `/d help` for help**'
-GEN_FAILURE      = ':x: **The model for this channel has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
+GEN_FAILURE      = ':x: **This model has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
 INVALID_ARG      = ':x: **(One of) the argument(s) is(/are) invalid - see `/d help` for help**'
 ONE_ARG          = ':x: **This command requires one argument - see `/d help` for help**'
 LEQ_ONE_ARG      = ':x: **This command requires zero or one arguments - see `/d help` for help**'
@@ -46,7 +31,12 @@ SETS_UPD         = '**Settings updated successfully** :white_check_mark:'
 INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
 INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
 RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
-JSON_DEC_FAILURE = ':x: **The model failed to load, proably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our supprot server (https://discord.gg/N52uWgD)**'
+JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our support server (https://discord.gg/N52uWgD)**'
+TOO_MANY_MSGS    = ':x: **Too many messages requested (10 max)**'
+ADMINISTRATIVE_C = ':x: **This command is administrative. Only people with the "administrator" privilege can execute it.**'
+RESET_SUCCESS    = '**Successfully reset training data for this channel** :white_check_mark:'
+AUTOGEN_DISABLED = '**Auto-generation disabled** :white_check_mark:'
+AUTOGEN_SETTO    = '**Auto-generation rate set to %s** :white_check_mark:'
 
 BATCH_SIZE = 100
 
@@ -69,9 +59,82 @@ except ImportError:
 
 try:
     import discord
+    from discord.ext.commands import Bot
 except ImportError:
     print('The discord library is not installed. Install it by running:\npip install discord')
     exit()
+
+# prepare constant embeds
+EMBED_COLOR = 0xe6f916
+
+HELP_CMDS_REGULAR = {
+    'help':                 'sends this message',
+    'status':               'tells you the current settings and stats',
+    'train <count>':        'trains the model using the last <count> messages in this channel',
+    'gen':                  'generates a message immediately',
+    'gen <count>':          'generates <count> messages immediately',
+    'gen #channel-mention': 'generates a message using the mentioned channel model',
+    'ggen':                 'generates a message immediately (using the global model)',
+    'support':              'ways to support this project',
+    'privacy':              'our privacy policy',
+    'uwu <enable/disable>': 'enable/disable the UwU mode (don\'t.)',
+    'info':                 'who created this?'
+}
+HELP_CMDS_ADMIN = {
+    'collect <yes/no>':    'allows or denies training using new messages',
+    'gcollect <yes/no>':   'allows or denies training the global model using new messages',
+    'reset':               'resets the training model',
+    'autorate <rate>':     'sets the automatic generation rate (one bot message per each <rate> normal ones)',
+    #'arole @role-mention': 'grants administrative permissions to the mentioned role. Only one role can have them at a time'
+}
+
+HELP = discord.Embed(title='Deuterium commands', color=EMBED_COLOR)
+HELP.add_field(inline=False, name='*All comands start with `/d `*', value='*ex.: `/d help`*')
+
+HELP.add_field(inline=False, name='REGULAR COMMANDS', value='Can be executed by anybody')
+for c in HELP_CMDS_REGULAR:
+    HELP.add_field(name=f'`{c}`', value=HELP_CMDS_REGULAR[c])
+
+HELP.add_field(inline=False, name='ADMINISTRATIVE COMMANDS', value='Can be executed by server administrators')
+for c in HELP_CMDS_ADMIN:
+    HELP.add_field(name=f'`{c}`', value=HELP_CMDS_ADMIN[c])
+
+HELP.add_field(inline=False, name='Notice', value=NOTICE)
+
+
+PRIVACY = discord.Embed(title='Deuterium Privacy Policy', color=EMBED_COLOR)
+PRIVACY.add_field(inline=False, name='1. SCOPE', value='''
+This message describes the relationship between the Deuterium Discord bot ("Deuterium", "the bot", "bot"), its creator ("I", "me") and its Users ("you").''')
+PRIVACY.add_field(inline=False, name='2. AUTHORIZATION', value='''
+When you authorize the bot, it is added as a member of the server you've chosen. It has no access to your profile, direct messages or anything that is not related to the selected server.''')
+PRIVACY.add_field(inline=False, name='3. DATA PROCESSING', value='''
+Deuterium processes every message it receives, both in authorized server channels and in direct messages. I should note, however, that before your message goes directly to the code I wrote, it's first received by the discord.py library, which I trust due to it being open source.
+When my code receives a direct message, it sends a simple response back and stops further processing.
+Else, if the message is received in a server channel:
+- if the message starts with `/d `, the bot treats it as a command and doesn't store it
+- else, if this channel has its "collect" setting set to "yes", it trains the model on this message and saves the said model do disk
+- if this channel has its "global collect" setting set to "yes", it trains the global model on this message and saves the said model do disk''')
+PRIVACY.add_field(inline=False, name='4. DATA STORAGE', value='''
+Deuterium stores the following data:
+- Channel settings and statistics (is message collection allowed, the total number of collected messages, etc.). This data can be viewed using the `/d status` command
+- The local Markov chain model, which consists of a set of probabilities of a word coming after another word
+- The global Markov chain model, which stores content described above
+Deuterium does **not** store the following data:
+- Raw messages
+- User IDs/nicknames/tags
+- Any other data not mentioned in the `Deuterium stores the following data` list above''')
+PRIVACY.add_field(inline=False, name='5. CONTACTING', value='''
+You can contact me regarding any issues through E-Mail (`portasynthinca3@gmail.com`)''')
+PRIVACY.add_field(inline=False, name='6. DATA REMOVAL', value='''
+Due to the nature of Markov chains, it's unfortunately not possible to remove a certain section of the data I store. Only the whole model can be reset.
+If you wish to reset the local model, you may use the `/d reset` command.
+If you wish to reset the global model, please contact me (see section `5. CONTACTING`) and provide explanation and proof of why you think that should happen.''')
+PRIVACY.add_field(inline=False, name='7. DATA DISCLOSURE', value='''
+I do not disclose collected data to any third parties. Furthermore, I do not look at it myself. The access to my server is properly secured, therefore it's unlikely that a potential hacker could gain access to the data.''')
+
+
+
+
 
 # check if there is a token in the environment variable list
 if 'DEUT_TOKEN' not in os.environ:
@@ -90,13 +153,13 @@ chanel_timers = {}
 channel_limits = {}
 
 # retrieves messages from a channel
-def getMsgs(channel, before, limit):
+def get_msgs(channel, before, limit):
     global BATCH_SIZE, TOKEN
     # split the limit into batches
     if limit > BATCH_SIZE:
         msgs = []
         for i in range(math.ceil(limit / BATCH_SIZE)):
-            result = getMsgs(channel, before, min(BATCH_SIZE, limit - (i * BATCH_SIZE)))
+            result = get_msgs(channel, before, min(BATCH_SIZE, limit - (i * BATCH_SIZE)))
             msgs += result
             before = result[0]['id']
             time.sleep(0.25)
@@ -111,7 +174,7 @@ def getMsgs(channel, before, limit):
         # rate limiting
         print(response)
         time.sleep(response['retry_after'] + 0.1)
-        return getMsgs(channel, before, limit)
+        return get_msgs(channel, before, limit)
 
     # return simplified data
     return [{'id':int(x['id']), 'content':x['content']} for x in response]
@@ -140,6 +203,8 @@ def unload_channel(id):
 
     print('X-X', id) # unloaded
 
+    chanel_timers.pop(id, None)
+
 # saves channel settings and model
 def save_channel(id):
     global channels
@@ -157,6 +222,12 @@ def channel_exists(id):
 # loads channel settings and model
 async def load_channel(id, channel):
     global channels
+
+    # abort any unloading timers
+    timer = chanel_timers.pop(id, None)
+    if timer is not None:
+        timer.clear()
+
     with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
         try:
             jsonified = json.loads(f.read().decode('utf-8'))
@@ -209,9 +280,16 @@ async def generate_channel(id, act_id):
     return generated_msg
 
 # generates a message and sends it in a separate thread
-async def generate_channel_threaded(id, act_id, chan):
+async def generate_channel_threaded(chan, cnt=1, id=-1):
+    if id == -1:
+        id = chan.id
+
     try:
-        await chan.send(await generate_channel(id, act_id))
+        final_msg = ''
+        for i in range(cnt):
+            final_msg += await generate_channel(id, chan.id) + '\n'
+
+        await chan.send(final_msg)
     except Forbidden:
         pass
 
@@ -239,244 +317,272 @@ def train(id, text):
 
 # trains a channel on previous messages (takes some time, meant to be run in a separate thread)
 def train_on_prev(chan_id, limit):
-    msgs = getMsgs(chan_id, 0, limit)
+    msgs = get_msgs(chan_id, 0, limit)
     for m in msgs:
         train(chan_id, m['content'])
 
-# the main client class
-class Deuterium(discord.Client):
 
-    def on_bot_exit(self):
-        # Thank you
-        # I'll say goodbye soon
-        # Though it's the end of the world
-        # Don't blame yourself, no
-        print('<-> CLOSING')
-        for chan_id in channels:
-            save_channel(chan_id)
-        save_channel(0)
 
-    async def on_ready(self):
-        global SELF_ID
-        SELF_ID = self.user.id
 
-        await load_channel(0, None)
 
-        await self.change_presence(activity=discord.Game(name='with markov chains'))
-        print('Everything OK!')
+bot = Bot(command_prefix='/d ', help_command=None)
 
-        atexit.register(self.on_bot_exit)
+def on_bot_exit():
+    # Thank you
+    # I'll say goodbye soon
+    # Though it's the end of the world
+    # Don't blame yourself, no
+    print('<-> CLOSING')
+    for chan_id in channels:
+        save_channel(chan_id)
 
-    async def on_message(self, msg):
-        global channels, SELF_ID
-        # don't react to own messages
-        if msg.author.id == SELF_ID:
+@bot.event
+async def on_ready():
+    await load_channel(0, None)
+
+    await bot.change_presence(activity=discord.Activity(
+        type=discord.ActivityType.playing,
+        name=f'with markov chains | "{bot.command_prefix}help" for help'
+    ))
+    print('Everything OK!')
+
+    atexit.register(on_bot_exit)
+
+
+
+@bot.command(pass_context=True, name='help')
+async def help_cmd(ctx):
+    await ctx.send(embed=HELP)
+
+@bot.command(pass_context=True, name='privacy')
+async def privacy_cmd(ctx):
+    await ctx.send(embed=PRIVACY)
+
+@bot.command(pass_context=True, name='support')
+async def privacy_cmd(ctx):
+    await ctx.send(SUPPORTING)
+
+@bot.command(pass_context=True, name='info')
+async def info_cmd(ctx):
+    await ctx.send(BOT_INFO)
+
+@bot.command(pass_context=True, name='status')
+async def status_cmd(ctx):
+    chan_info = channels[ctx.message.channel.id]
+    autorate = chan_info['autorate']
+    embed = discord.Embed(title='Deuterium status', color=EMBED_COLOR)
+    embed.add_field(name='Training on messages from this channel',                    value='yes' if chan_info['collect'] else 'no')
+    embed.add_field(name='Total messages trained on',                                 value=str(chan_info['collected']))
+    embed.add_field(name='Contributing to the global model',                          value='yes' if chan_info['gcollect'] else 'no')
+    embed.add_field(name='Messages added to the global model by this channel',        value=str(chan_info['gcollected']))
+    embed.add_field(name='Messages added to the global model by everyone everywhere', value=str(channels[0]['collected']))
+    embed.add_field(name='Automatically sending messages after each',                 value=str('[disabled]' if autorate == 0 else autorate))
+    embed.add_field(name='UwU mode',                                                  value='enabled' if chan_info['uwumode'] else 'disabled')
+    embed.add_field(name='Notice',                                                    value='Please see `/d help`')
+    await ctx.send(embed=embed)
+
+@bot.command(pass_context=True, name='uwu')
+async def uwu_cmd(ctx, *args):
+    if len(args) != 1:
+        await ctx.send(ONE_ARG)
+        return
+    uwu = args[0]
+    if uwu not in ['enable', 'disable']:
+        await ctx.send(INVALID_ARG)
+    else:
+        channels[ctx.message.channel.id]['uwumode'] = (True
+            if uwu == 'enable' else False)
+        await ctx.send(SETS_UPD)
+
+@bot.command(pass_context=True, name='gen')
+async def gen_cmd(ctx, *args):
+    channel = ctx.message.channel
+    if len(args) == 0:
+        await generate_channel_threaded(channel)
+
+    elif len(args) == 1:
+        try:
+            count = int(args[0])
+            if count > 10:
+                await ctx.send(TOO_MANY_MSGS)
+                return
+            await generate_channel_threaded(channel, count)
+        except: # it must be a channel
+            try:
+                target_cid = int(args[0][2:-1])
+                await generate_channel_threaded(channel, 1, target_cid)
+            except:
+                await channel.send(INVALID_CHANNEL)
+
+    else:
+        await channel.send(LEQ_ONE_ARG)
+
+@bot.command(pass_context=True, name='ggen')
+async def ggen_cmd(ctx):
+    # 0 because we're using the global model
+    await generate_channel_threaded(ctx.message.channel, 1, 0)
+
+@bot.command(pass_context=True, name='train')
+async def train_cmd(ctx, *args):
+    if len(args) != 1:
+        await ctx.send(ONE_ARG)
+        return
+        
+    try:
+        cnt = int(args[0])
+    except:
+        await ctx.send(INVALID_ARG)
+    else:
+        if cnt > 1000 or cnt < 1:
+            await ctx.send(INVALID_MSG_CNT)
             return
+        await ctx.send(RETRIEVING_MSGS)
+        retrieve_thr = threading.Thread(target=train_on_prev, args=(ctx.message.channel.id, cnt), name='Training thread')
+        retrieve_thr.start()
 
-        # ignore bots
-        if msg.author.bot:
+
+# determines if the sender has admin privileges
+def has_admin(ctx):
+    author = ctx.message.author
+    return author.guild_permissions.administrator
+
+@bot.command(pass_context=True, name='collect')
+async def collect_cmd(ctx, *args):
+    if not has_admin(ctx):
+        await ctx.send(ADMINISTRATIVE_C)
+        return
+
+    if len(args) != 1:
+        await ctx.send(ONE_ARG)
+        return
+
+    collect = args[0]
+    if collect not in ['yes', 'no']:
+        await ctx.send(INVALID_ARG)
+    else:
+        channels[ctx.message.channel.id]['collect'] = True if collect == 'yes' else False
+        await ctx.send(SETS_UPD)
+
+@bot.command(pass_context=True, name='gcollect')
+async def gcollect_cmd(ctx, *args):
+    if not has_admin(ctx):
+        await ctx.send(ADMINISTRATIVE_C)
+        return
+        
+    if len(args) != 1:
+        await ctx.send(ONE_ARG)
+        return
+
+    collect = args[0]
+    if collect not in ['yes', 'no']:
+        await ctx.send(INVALID_ARG)
+    else:
+        channels[ctx.message.channel.id]['gcollect'] = True if collect == 'yes' else False
+        await ctx.send(SETS_UPD)
+
+@bot.command(pass_context=True, name='reset')
+async def reset_cmd(ctx):
+    if not has_admin(ctx):
+        await ctx.send(ADMINISTRATIVE_C)
+        return
+
+    chan_info = channels[ctx.message.channel.id]
+    chan_info['model'] = None
+    chan_info['collected'] = 0
+    await ctx.send(RESET_SUCCESS)
+
+@bot.command(pass_context=True, name='autorate')
+async def autorate_cmd(ctx, *args):
+    if not has_admin(ctx):
+        await ctx.send(ADMINISTRATIVE_C)
+        return
+        
+    if len(args) != 1:
+        await ctx.send(ONE_ARG)
+        return
+
+    autorate = args[0]
+    try:
+        autorate = int(autorate)
+        if autorate < 0:
+            await ctx.send(INVALID_ARG)
             return
+        chan_info['autorate'] = autorate
+        await ctx.send(AUTOGEN_DISABLED if autorate == 0 else (AUTOGEN_SETTO % str(autorate)))
+    except:
+        await ctx.send(INVALID_ARG)
 
-        # don't react to DMs
-        if msg.guild == None:
-            await msg.channel.send(':x: **This bot only works in servers**')
-            return
+@bot.event
+async def on_command_error(ctx, ex):
+    if type(ex) is discord.ext.commands.errors.CommandNotFound:
+        await ctx.send(UNKNOWN_CMD)
 
-        # don't react to empty messages (if it's just a picture, or audio, etc.)
-        if len(msg.content) == 0:
-            return
 
-        # load channel settings and model from the disk if available and needed
-        chan_id = msg.channel.id
-        if channel_exists(chan_id) and chan_id not in channels:
-            await load_channel(chan_id, msg.channel)
 
-        # create a new channel object if it doesn't exist
-        if chan_id not in channels:
-            channels[chan_id] = {'model':None,
-                                 'collect':True, 'collected':0,
-                                 'autorate':20, 'total_msgs':0,
-                                 'gcollect':False, 'gcollected':0,
-                                 'uwumode':False}
+# we need this because the bot has to train its message generation models
+@bot.event
+async def on_message(msg: discord.Message):
+    global channels
+    channel = msg.channel
 
-        # add fields that appeared in newer versions of the bot
-        if 'total_msgs' not in channels[chan_id]:
-            channels[chan_id]['total_msgs'] = 0
-        if 'uwumode' not in channels[chan_id]:
-            channels[chan_id]['uwumode'] = False
+    # ignore bots
+    if msg.author.bot:
+        return
 
-        # check if it's a command
-        if msg.content.startswith('/d '):
-            # get the command and arguments
-            args = msg.content[len('/d '):].split(' ')
-            cmd = args[0]
-            args = args[1:]
+    # don't react to DMs
+    if msg.guild == None:
+        await channel.send(':x: **This bot only works in servers**')
+        return
 
-            if cmd == 'help':
-                await msg.channel.send(HELP)
+    # don't react to empty messages (if it's just a picture, or audio, etc.)
+    if len(msg.content) == 0:
+        return
 
-            elif cmd == 'status':
-                autorate = channels[chan_id]['autorate']
-                embed = discord.Embed(title='Deuterium status', color=0xe6f916)
-                embed.add_field(inline=True, name='Training on messages from this channel',                          value='yes' if channels[chan_id]['collect'] else 'no')
-                embed.add_field(inline=True, name='Total messages trained on',                                       value=str(channels[chan_id]['collected']))
-                embed.add_field(inline=True, name='Contributing to the global model',                                value='yes' if channels[chan_id]['gcollect'] else 'no')
-                embed.add_field(inline=True, name='Messages contributed to the global model by this channel',        value=str(channels[chan_id]['gcollected']))
-                embed.add_field(inline=True, name='Messages contributed to the global model by everyone everywhere', value=str(channels[0]['collected']))
-                embed.add_field(inline=True, name='Automatically sending messages after each',                       value=str('[disabled]' if autorate == 0 else autorate))
-                embed.add_field(inline=True, name='UwU mode',                                                        value='enabled' if channels[chan_id]['uwumode'] else 'disabled')
-                embed.add_field(inline=True, name='Notice',                                                          value='Please see `/d help`')
-                await msg.channel.send(embed=embed)
+    # load channel settings and model from the disk if available and needed
+    chan_id = channel.id
+    if channel_exists(chan_id) and chan_id not in channels:
+        await load_channel(chan_id, channel)
 
-            elif cmd == 'collect':
-                if len(args) != 1:
-                    await msg.channel.send()
-                else:
-                    collect = args[0]
-                    if collect not in ['yes', 'no']:
-                        await msg.channel.send(INVALID_ARG)
-                    else:
-                        channels[chan_id]['collect'] = True if collect == 'yes' else False
-                        await msg.channel.send(SETS_UPD)
+    # create a new channel object if it doesn't exist
+    if chan_id not in channels:
+        chan_info = {'model':None,
+                                'collect':True, 'collected':0,
+                                'autorate':20, 'total_msgs':0,
+                                'gcollect':False, 'gcollected':0,
+                                'uwumode':False}
+    
+    chan_info = channels[chan_id]
 
-            elif cmd == 'gcollect':
-                if len(args) != 1:
-                    await msg.channel.send(ONE_ARG)
-                else:
-                    collect = args[0]
-                    if collect not in ['yes', 'no']:
-                        await msg.channel.send(INVALID_ARG)
-                    else:
-                        channels[chan_id]['gcollect'] = True if collect == 'yes' else False
-                        await msg.channel.send(SETS_UPD)
+    # add fields that appeared in newer versions of the bot
+    if 'total_msgs' not in chan_info:
+        chan_info['total_msgs'] = 0
 
-            elif cmd == 'uwu':
-                if len(args) != 1:
-                    await msg.channel.send(ONE_ARG)
-                else:
-                    uwu = args[0]
-                    if uwu not in ['enable', 'disable']:
-                        await msg.channel.send(INVALID_ARG)
-                    else:
-                        channels[chan_id]['uwumode'] = True if uwu == 'enable' else False
-                        await msg.channel.send(SETS_UPD)
+    if 'uwumode'    not in chan_info:
+        chan_info['uwumode'] = False
 
-            elif cmd == 'gen':
-                if len(args) == 0:
-                    await generate_channel_threaded(chan_id, chan_id, msg.channel)
-                elif len(args) == 1:
-                    try:
-                        target_cid = int(args[0][2:-1])
-                        await generate_channel_threaded(target_cid, chan_id, msg.channel)
-                    except:
-                        await msg.channel.send(INVALID_CHANNEL)
-                else:
-                    await msg.channel.send(LEQ_ONE_ARG)
+    # check if it's a command
+    if msg.content.startswith(bot.command_prefix):
+        # process the command and return
+        await bot.process_commands(msg)
+        return
 
-            elif cmd == 'ggen':
-                await generate_channel_threaded(0, chan_id, msg.channel)
+    # it's an ordinary message and not a command
+    # train on this message if allowed
+    if chan_info['collect']:
+        train(chan_id, msg.content)
 
-            elif cmd == 'privacy':
-                embed = discord.Embed(title='Deuterium Privacy Policy', color=0xe6f916)
-                embed.add_field(inline=False, name='1. SCOPE', value='''
-This message describes the relationship between the Deuterium Discord bot ("Deuterium", "the bot", "bot"), its creator ("I", "me") and its Users ("you").''')
-                embed.add_field(inline=False, name='2. AUTHORIZATION', value='''
-When you authorize the bot, it is added as a member of the server you've chosen. It has no access to your profile, direct messages or anything that is not related to the selected server.''')
-                embed.add_field(inline=False, name='3. DATA PROCESSING', value='''
-Deuterium processes every message it receives, both in authorized server channels and in direct messages. I should note, however, that before your message goes directly to the code I wrote, it's first received by the discord.py library, which I trust due to it being open source.
-When my code receives a direct message, it sends a simple response back and stops further processing.
-Else, if the message is received in a server channel:
-- if the message starts with `/d `, the bot treats it as a command and doesn't store it
-- else, if this channel has its "collect" setting set to "yes", it trains the model on this message and saves the said model do disk
-- if this channel has its "global collect" setting set to "yes", it trains the global model on this message and saves the said model do disk''')
-                embed.add_field(inline=False, name='4. DATA STORAGE', value='''
-Deuterium stores the following data:
-- Channel settings and statistics (is message collection allowed, the total number of collected messages, etc.). This data can be viewed using the `/d status` command
-- The local Markov chain model, which consists of a set of probabilities of a word coming after another word
-- The global Markov chain model, which stores content described above
-Deuterium does **not** store the following data:
-- Raw messages
-- User IDs/nicknames/tags
-- Any other data not mentioned in the `Deuterium stores the following data` list above''')
-                embed.add_field(inline=False, name='5. CONTACTING', value='''
-You can contact me regarding any issues through E-Mail (`portasynthinca3@gmail.com`)''')
-                embed.add_field(inline=False, name='6. DATA REMOVAL', value='''
-Due to the nature of Markov chains, it's unfortunately not possible to remove a certain section of the data I store. Only the whole model can be reset.
-If you wish to reset the local model, you may use the `/d reset` command.
-If you wish to reset the global model, please contact me (see section `5. CONTACTING`) and provide explanation and proof of why you think that should happen.''')
-                embed.add_field(inline=False, name='7. DATA DISCLOSURE', value='''
-I do not disclose collected data to any third parties. Furthermore, I do not look at it myself. The access to my server is properly secured, therefore it's unlikely that a potential hacker could gain access to the data.''')
-                await msg.channel.send(embed=embed)
+    # train the global model if allowed
+    if chan_info['gcollect']:
+        train(0, msg.content)
+        chan_info['gcollected'] += 1
 
-            elif cmd == 'reset':
-                channels[chan_id]['model'] = None
-                channels[chan_id]['collected'] = 0
-                await msg.channel.send('**Successfully reset training data for this channel** :white_check_mark:')
+    # generate a message if needed
+    if chan_info['autorate'] > 0 and chan_info['total_msgs'] % chan_info['autorate'] == 0:
+        await generate_channel_threaded(chan_id, chan_id, channel)
 
-            elif cmd == 'donate':
-                await msg.channel.send(DONATING)
+    chan_info['total_msgs'] += 1
 
-            elif cmd == 'train':
-                if len(args) != 1:
-                    await msg.channel.send(ONE_ARG)
-                else:
-                    try:
-                        cnt = int(args[0])
-                    except:
-                        await msg.channel.send(INVALID_ARG)
-                    else:
-                        if cnt > 1000 or cnt < 1:
-                            await msg.channel.send(INVALID_MSG_CNT)
-                        else:
-                            await msg.channel.send(RETRIEVING_MSGS)
-                            retrieve_thr = threading.Thread(target=train_on_prev, args=(chan_id, cnt), name='Previous training thread')
-                            retrieve_thr.start()
+    # unload the channel in a while
+    schedule_unload(chan_id)
 
-            elif cmd == 'autorate':
-                if len(args) != 1:
-                    await msg.channel.send(ONE_ARG)
-                else:
-                    autorate = args[0]
-                    try:
-                        autorate = int(autorate)
-                    except:
-                        await msg.channel.send(INVALID_ARG)
-                    else:
-                        if autorate < 0:
-                            await msg.channel.send(INVALID_ARG)
-                        else:
-                            channels[chan_id]['autorate'] = autorate
-                            if autorate == 0:
-                                await msg.channel.send('**Auto-generation disabled** :white_check_mark:')
-                            else:
-                                await msg.channel.send(f'**Auto-generation rate set to {str(autorate)}** :white_check_mark:')
-
-            elif cmd == 'info':
-                await msg.channel.send(BOT_INFO)
-
-            else:
-                await msg.channel.send(UNKNOWN_CMD)
-
-            return # don't train on commands
-
-        # it's an ordinary message and not a command
-        # train on this message if allowed
-        if channels[chan_id]['collect']:
-            train(chan_id, msg.content)
-
-        # train the global model if allowed
-        if channels[chan_id]['gcollect']:
-            train(0, msg.content)
-            channels[chan_id]['gcollected'] += 1
-
-        # generate a message if needed
-        if channels[chan_id]['autorate'] > 0 and channels[chan_id]['total_msgs'] % channels[chan_id]['autorate'] == 0:
-            await generate_channel_threaded(chan_id, chan_id, msg.channel)
-
-        channels[chan_id]['total_msgs'] += 1
-
-        schedule_unload(chan_id)
-
-# create the client
-deut = Deuterium()
-deut.run(TOKEN)
+bot.run(TOKEN)
