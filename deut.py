@@ -14,8 +14,9 @@ Donate money on Patreon: https://patreon.com/portasynthinca3
 BOT_INFO = '''
 Hi!
 This project was created by portasynthinca3 (https://github.com/portasynthinca3).
-The sort of "backbone" of it is the markovify (https://github.com/jsvine/markovify) library.
-You can join our support server if you're experiencing any issues: https://discord.gg/N52uWgD
+The sort of "backbone" of it is the markovify library (https://github.com/jsvine/markovify).
+You can join our support server if you're experiencing any issues: https://discord.gg/N52uWgD.
+Please consider supporting us (`/d support`).
 '''
 
 NOTICE = '''
@@ -33,16 +34,16 @@ INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 mess
 RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
 JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our support server (https://discord.gg/N52uWgD)**'
 TOO_MANY_MSGS    = ':x: **Too many messages requested (10 max)**'
-ADMINISTRATIVE_C = ':x: **This command is administrative. Only people with the "administrator" privilege can execute it.**'
+ADMINISTRATIVE_C = ':x: **This command is administrative. Only people with the "administrator" privilege can execute it**'
 RESET_SUCCESS    = '**Successfully reset training data for this channel** :white_check_mark:'
 AUTOGEN_DISABLED = '**Auto-generation disabled** :white_check_mark:'
-AUTOGEN_SETTO    = '**Auto-generation rate set to %s** :white_check_mark:'
+AUTOGEN_SETTO    = '**Auto-generation rate set to {0}** :white_check_mark:'
 
 BATCH_SIZE = 100
 
 # try importing libraries
 import sys, os, threading, re, atexit
-import requests, json, gzip
+import requests, json, gzip, heapq
 import math, random
 import time
 import asyncio
@@ -78,7 +79,9 @@ HELP_CMDS_REGULAR = {
     'support':              'ways to support this project',
     'privacy':              'our privacy policy',
     'uwu <enable/disable>': 'enable/disable the UwU mode (don\'t.)',
-    'info':                 'who created this?'
+    'info':                 'who created this?',
+    'scoreboard':           'shows top 10 most active users',
+    #'gscoreboard':          'shows top 10 most active users in the global model'
 }
 HELP_CMDS_ADMIN = {
     'collect <yes/no>':    'allows or denies training using new messages',
@@ -119,9 +122,10 @@ Deuterium stores the following data:
 - Channel settings and statistics (is message collection allowed, the total number of collected messages, etc.). This data can be viewed using the `/d status` command
 - The local Markov chain model, which consists of a set of probabilities of a word coming after another word
 - The global Markov chain model, which stores content described above
+- Channel and user IDs
 Deuterium does **not** store the following data:
 - Raw messages
-- User IDs/nicknames/tags
+- User nicknames/tags
 - Any other data not mentioned in the `Deuterium stores the following data` list above''')
 PRIVACY.add_field(inline=False, name='5. CONTACTING', value='''
 You can contact me regarding any issues through E-Mail (`portasynthinca3@gmail.com`)''')
@@ -226,7 +230,7 @@ async def load_channel(id, channel):
     # abort any unloading timers
     timer = chanel_timers.pop(id, None)
     if timer is not None:
-        timer.clear()
+        return
 
     with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
         try:
@@ -241,6 +245,17 @@ async def load_channel(id, channel):
             if channel is not None:
                 await channel.send(JSON_DEC_FAILURE)
                 return
+
+    # add fields that appeared in newer versions of the bot
+    chan_info = channels[id]
+    new_fields = {
+        'total_msgs': 0,
+        'uwumode':    False,
+        'ustats':     {}
+    }
+    for k,v in new_fields.items():
+        if k not in chan_info:
+            chan_info[k] = new_fields[k]
 
     print('-->', id) # loaded
 
@@ -365,6 +380,30 @@ async def privacy_cmd(ctx):
 @bot.command(pass_context=True, name='info')
 async def info_cmd(ctx):
     await ctx.send(BOT_INFO)
+
+def get_key(d, val): 
+    for k, v in d.items():
+        if v == val:
+            return k
+    return None
+
+@bot.command(pass_context=True, name='scoreboard')
+async def scoreboard_cmd(ctx):
+    channel_info = channels[ctx.message.channel.id]
+    ustats = channel_info['ustats']
+    # get 10 biggest values and form a scoreboard embed
+    top = {k: v for k, v in sorted(ustats.items(), key=lambda item: item[1], reverse=True)}
+    top_u, top_c = list(top.keys())[:10], list(top.values())[:10]
+
+    embed = discord.Embed(title='Deuterium scoreboard', color=EMBED_COLOR)
+    for i in range(len(top_u)):
+        u = top_u[i]
+        c = top_c[i]
+        embed.add_field(inline=False, name=f'#{str(i+1)}', value=f'<@{str(u)}> - **{str(c)}** messages')
+
+    if len(top_u) == 0:
+        embed.add_field(inline=False, name=f'Empty', value='Enable message collection (`/d collect yes`) and talk for a while')
+    await ctx.send(embed=embed)
 
 @bot.command(pass_context=True, name='status')
 async def status_cmd(ctx):
@@ -501,6 +540,8 @@ async def autorate_cmd(ctx, *args):
         await ctx.send(ONE_ARG)
         return
 
+    chan_info = channels[ctx.message.channel.id]
+
     autorate = args[0]
     try:
         autorate = int(autorate)
@@ -508,14 +549,16 @@ async def autorate_cmd(ctx, *args):
             await ctx.send(INVALID_ARG)
             return
         chan_info['autorate'] = autorate
-        await ctx.send(AUTOGEN_DISABLED if autorate == 0 else (AUTOGEN_SETTO % str(autorate)))
-    except:
+        await ctx.send(AUTOGEN_DISABLED if autorate == 0 else (AUTOGEN_SETTO.format(str(autorate))))
+    except ValueError:
         await ctx.send(INVALID_ARG)
 
 @bot.event
-async def on_command_error(ctx, ex):
+async def on_command_error(ctx, ex: Exception):
     if type(ex) is discord.ext.commands.errors.CommandNotFound:
         await ctx.send(UNKNOWN_CMD)
+    else:
+        print(ex)
 
 
 
@@ -539,26 +582,22 @@ async def on_message(msg: discord.Message):
         return
 
     # load channel settings and model from the disk if available and needed
-    chan_id = channel.id
+    chan_id = int(channel.id)
     if channel_exists(chan_id) and chan_id not in channels:
         await load_channel(chan_id, channel)
 
     # create a new channel object if it doesn't exist
     if chan_id not in channels:
-        chan_info = {'model':None,
-                                'collect':True, 'collected':0,
-                                'autorate':20, 'total_msgs':0,
-                                'gcollect':False, 'gcollected':0,
-                                'uwumode':False}
+        chan_info = {
+            'model':    None,
+            'collect':  True,  'collected':  0,
+            'autorate': 20,    'total_msgs': 0,
+            'gcollect': False, 'gcollected': 0,
+            'uwumode':  False, 'ustats':     {}
+        }
+        channels[chan_id] = chan_info
     
     chan_info = channels[chan_id]
-
-    # add fields that appeared in newer versions of the bot
-    if 'total_msgs' not in chan_info:
-        chan_info['total_msgs'] = 0
-
-    if 'uwumode'    not in chan_info:
-        chan_info['uwumode'] = False
 
     # check if it's a command
     if msg.content.startswith(bot.command_prefix):
@@ -571,6 +610,13 @@ async def on_message(msg: discord.Message):
     if chan_info['collect']:
         train(chan_id, msg.content)
 
+        # add a score to the user
+        ustats = chan_info['ustats']
+        author = str(msg.author.id)
+        if author not in ustats:
+            ustats[author] = 0
+        ustats[author] += 1
+
     # train the global model if allowed
     if chan_info['gcollect']:
         train(0, msg.content)
@@ -578,7 +624,7 @@ async def on_message(msg: discord.Message):
 
     # generate a message if needed
     if chan_info['autorate'] > 0 and chan_info['total_msgs'] % chan_info['autorate'] == 0:
-        await generate_channel_threaded(chan_id, chan_id, channel)
+        await generate_channel_threaded(channel)
 
     chan_info['total_msgs'] += 1
 
