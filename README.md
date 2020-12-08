@@ -1,3 +1,4 @@
+[![Discord Bots](https://top.gg/api/widget/status/733605243396554813.svg)](https://top.gg/bot/733605243396554813)
 # deuterium
 Deuterium is a Discord bot that automatically generates messages based on the previously seen messages on a per-channel basis.
 
