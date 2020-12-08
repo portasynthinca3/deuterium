@@ -155,6 +155,7 @@ SELF_ID = None
 channels = {}
 chanel_timers = {}
 channel_limits = {}
+channel_locks = {}
 
 # retrieves messages from a channel
 def get_msgs(channel, before, limit):
@@ -202,12 +203,19 @@ def unload_channel(id):
     if id == 0:
         return
 
-    save_channel(id)
-    channels.pop(id, {})
+    # prevent corruption
+    lock = channel_locks.pop(id, None)
+    if lock is None:
+        lock = threading.Lock()
+        channel_locks[id] = lock
 
-    print('X-X', id) # unloaded
+    with lock:
+        save_channel(id)
+        channels.pop(id, {})
 
-    chanel_timers.pop(id, None)
+        print('X-X', id) # unloaded
+
+        chanel_timers.pop(id, None)
 
 # saves channel settings and model
 def save_channel(id):
@@ -227,37 +235,44 @@ def channel_exists(id):
 async def load_channel(id, channel):
     global channels
 
-    # abort any unloading timers
-    timer = chanel_timers.pop(id, None)
-    if timer is not None:
-        return
+    # prevent corruption
+    lock = channel_locks.pop(id, None)
+    if lock is None:
+        lock = threading.Lock()
+        channel_locks[id] = lock
 
-    with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
-        try:
-            jsonified = json.loads(f.read().decode('utf-8'))
+    with lock:
+        # abort any unloading timers
+        timer = chanel_timers.pop(id, None)
+        if timer is not None:
+            timer.cancel()
 
-            if jsonified['model'] != None:
-                jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
-            channels[id] = jsonified
+        with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
+            try:
+                jsonified = json.loads(f.read().decode('utf-8'))
 
-        except JSONDecodeError:
-            print('!!!', id) # failed to load
-            if channel is not None:
-                await channel.send(JSON_DEC_FAILURE)
-                return
+                if jsonified['model'] != None:
+                    jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
+                channels[id] = jsonified
 
-    # add fields that appeared in newer versions of the bot
-    chan_info = channels[id]
-    new_fields = {
-        'total_msgs': 0,
-        'uwumode':    False,
-        'ustats':     {}
-    }
-    for k,v in new_fields.items():
-        if k not in chan_info:
-            chan_info[k] = new_fields[k]
+            except JSONDecodeError:
+                print('!!!', id) # failed to load
+                if channel is not None:
+                    await channel.send(JSON_DEC_FAILURE)
+                    return
 
-    print('-->', id) # loaded
+        # add fields that appeared in newer versions of the bot
+        chan_info = channels[id]
+        new_fields = {
+            'total_msgs': 0,
+            'uwumode':    False,
+            'ustats':     {}
+        }
+        for k,v in new_fields.items():
+            if k not in chan_info:
+                chan_info[k] = new_fields[k]
+
+        print('-->', id) # loaded
 
 # generates a message
 async def generate_channel(id, act_id):
@@ -362,7 +377,6 @@ async def on_ready():
     print('Everything OK!')
 
     atexit.register(on_bot_exit)
-
 
 
 @bot.command(pass_context=True, name='help')
