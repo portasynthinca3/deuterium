@@ -7,7 +7,7 @@
 # constant messages
 SUPPORTING = '''
 You can tell your friends about this bot, as well as:
-Vote for it on DBL: https://top.gg/bot/733605243396554813/vote
+Vote on DBL: https://top.gg/bot/733605243396554813/vote
 Donate money on Patreon: https://patreon.com/portasynthinca3
 '''
 
@@ -19,8 +19,8 @@ You can join our support server if you're experiencing any issues: https://disco
 Please consider supporting us (`/d support`).
 '''
 
-NOTICE = '''
-I didn't expect this surge of users when I created this bot. As such, I can't keep up with the amount of users I have anymore, this project requires a more powerful server. Please consider supporting us (**`/d support`**).
+ANNOUNCEMENT = '''
+I have moved to a new server with an AMD EPYC server CPU! This means that I'll probably be able to implement a new message generation technique
 '''
 
 UNKNOWN_CMD      = ':x: **Unknown command - type `/d help` for help**'
@@ -32,38 +32,37 @@ SETS_UPD         = '**Settings updated successfully** :white_check_mark:'
 INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
 INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
 RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
-JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our support server (https://discord.gg/N52uWgD)**'
+JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our support server (<https://discord.gg/N52uWgD>). If this problem stops occuring in a minute or so, that\'s probably because I restored a backup.**'
 TOO_MANY_MSGS    = ':x: **Too many messages requested (10 max)**'
 ADMINISTRATIVE_C = ':x: **This command is administrative. Only people with the "administrator" privilege can execute it**'
 RESET_SUCCESS    = '**Successfully reset training data for this channel** :white_check_mark:'
 AUTOGEN_DISABLED = '**Auto-generation disabled** :white_check_mark:'
 AUTOGEN_SETTO    = '**Auto-generation rate set to {0}** :white_check_mark:'
+CREATOR_ONLY     = ':x: **This command can only be executed by the creator of the bot**'
+MADE_NEURAL      = '**This channel is now using a neural network** :white_check_mark:'
 
 BATCH_SIZE = 100
 
 # try importing libraries
-import sys, os, threading, re, atexit
-import requests, json, gzip, heapq
+import sys, os, threading, re, string, atexit, psutil, gc, traceback
+import requests, json, gzip, zlib, heapq
 import math, random
-import time
+import time, datetime
 import asyncio
+import markovify
+import discord
+from discord.ext.commands import Bot
 from threading import Thread
 from multiprocessing import Process
 from discord.errors import Forbidden
 from json import JSONDecodeError
 
-try:
-    import markovify
-except ImportError:
-    print('The markovify library is not installed. Install it by running:\npip install markovify')
-    exit()
-
-try:
-    import discord
-    from discord.ext.commands import Bot
-except ImportError:
-    print('The discord library is not installed. Install it by running:\npip install discord')
-    exit()
+import numpy as np
+from keras.utils import np_utils
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import load_model as keras_load_model
+from keras.models import Sequential
+from keras.layers import Dense, LSTM, Activation, Dropout
 
 # prepare constant embeds
 EMBED_COLOR = 0xe6f916
@@ -71,6 +70,7 @@ EMBED_COLOR = 0xe6f916
 HELP_CMDS_REGULAR = {
     'help':                 'sends this message',
     'status':               'tells you the current settings and stats',
+    'stats':                'global Deuterium stats',
     'train <count>':        'trains the model using the last <count> messages in this channel',
     'gen':                  'generates a message immediately',
     'gen <count>':          'generates <count> messages immediately',
@@ -92,6 +92,8 @@ HELP_CMDS_ADMIN = {
 }
 
 HELP = discord.Embed(title='Deuterium commands', color=EMBED_COLOR)
+HELP.add_field(inline=False, name='Latest Announcement', value=ANNOUNCEMENT)
+
 HELP.add_field(inline=False, name='*All comands start with `/d `*', value='*ex.: `/d help`*')
 
 HELP.add_field(inline=False, name='REGULAR COMMANDS', value='Can be executed by anybody')
@@ -102,7 +104,6 @@ HELP.add_field(inline=False, name='ADMINISTRATIVE COMMANDS', value='Can be execu
 for c in HELP_CMDS_ADMIN:
     HELP.add_field(name=f'`{c}`', value=HELP_CMDS_ADMIN[c])
 
-HELP.add_field(inline=False, name='Notice', value=NOTICE)
 
 
 PRIVACY = discord.Embed(title='Deuterium Privacy Policy', color=EMBED_COLOR)
@@ -142,7 +143,7 @@ I do not disclose collected data to any third parties. Furthermore, I do not loo
 
 # check if there is a token in the environment variable list
 if 'DEUT_TOKEN' not in os.environ:
-    print('No bot token (BEUT_TOKEN) in the list of environment variables')
+    print('No bot token (DEUT_TOKEN) in the list of environment variables')
     exit()
 TOKEN = os.environ['DEUT_TOKEN']
 
@@ -156,6 +157,8 @@ channels = {}
 chanel_timers = {}
 channel_limits = {}
 channel_locks = {}
+global_c_lock = threading.Lock()
+process = None
 
 # retrieves messages from a channel
 def get_msgs(channel, before, limit):
@@ -198,20 +201,24 @@ def schedule_unload(id):
     timer.start()
     chanel_timers[id] = timer
 
+def channel_lock(id):
+    lock = channel_locks.pop(id, None)
+    if lock is None:
+        lock = threading.Lock()
+        channel_locks[id] = lock
+    return lock
+
 # unloads a channel from memory
 def unload_channel(id):
     if id == 0:
         return
 
     # prevent corruption
-    lock = channel_locks.pop(id, None)
-    if lock is None:
-        lock = threading.Lock()
-        channel_locks[id] = lock
-
-    with lock:
+    with global_c_lock:
         save_channel(id)
-        channels.pop(id, {})
+        del channels[id]['model']
+        del channels[id]
+        gc.collect()
 
         print('X-X', id) # unloaded
 
@@ -220,11 +227,22 @@ def unload_channel(id):
 # saves channel settings and model
 def save_channel(id):
     global channels
-    with gzip.open(f'channels/{str(id)}.json.gz', 'wb') as f:
-        to_jsonify = channels[id].copy()
-        if to_jsonify['model'] != None:
-            to_jsonify['model'] = to_jsonify['model'].to_dict()
-        f.write(json.dumps(to_jsonify).encode('utf-8'))
+
+    with channel_lock(id):
+        with gzip.open(f'channels/{id}.json.gz', 'wb') as f:
+            to_jsonify = channels[id].copy()
+
+            if to_jsonify['model'] is not None:
+                to_jsonify['model'] = to_jsonify['model'].to_dict()
+
+            # save the neural model separately
+            n_model = to_jsonify['n_model']
+            if n_model is not None:
+                n_model.save(f'neural_channels/{id}.tf', save_format='tf')
+                print('<-N', id) # dumped neural
+                del to_jsonify['n_model']
+
+            f.write(json.dumps(to_jsonify).encode('utf-8'))
 
     print('<--', id) # dumped
 
@@ -236,43 +254,50 @@ async def load_channel(id, channel):
     global channels
 
     # prevent corruption
-    lock = channel_locks.pop(id, None)
-    if lock is None:
-        lock = threading.Lock()
-        channel_locks[id] = lock
+    with global_c_lock:
+        with channel_lock(id):
+            # abort any unloading timers
+            timer = chanel_timers.pop(id, None)
+            if timer is not None:
+                timer.cancel()
 
-    with lock:
-        # abort any unloading timers
-        timer = chanel_timers.pop(id, None)
-        if timer is not None:
-            timer.cancel()
-
-        with gzip.open(f'channels/{str(id)}.json.gz', 'rb') as f:
             try:
-                jsonified = json.loads(f.read().decode('utf-8'))
+                with gzip.open(f'channels/{id}.json.gz', 'rb') as f:
+                    jsonified = json.loads(f.read().decode('utf-8'))
 
-                if jsonified['model'] != None:
-                    jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
-                channels[id] = jsonified
+                    if jsonified['model'] != None:
+                        jsonified['model'] = markovify.NewlineText.from_dict(jsonified['model'])
+                    channels[id] = jsonified
 
-            except JSONDecodeError:
+            except (JSONDecodeError, OSError, zlib.error) as ex:
+                # notify me
+                await (await bot.application_info()).owner.send(f':x: **Model failed to load ({id})**')
+
                 print('!!!', id) # failed to load
                 if channel is not None:
                     await channel.send(JSON_DEC_FAILURE)
-                    return
+                return
 
-        # add fields that appeared in newer versions of the bot
-        chan_info = channels[id]
-        new_fields = {
-            'total_msgs': 0,
-            'uwumode':    False,
-            'ustats':     {}
-        }
-        for k,v in new_fields.items():
-            if k not in chan_info:
-                chan_info[k] = new_fields[k]
+            # add fields that appeared in newer versions of the bot
+            chan_info = channels[id]
+            new_fields = {
+                'total_msgs': 0,
+                'uwumode':    False,
+                'ustats':     {},
 
-        print('-->', id) # loaded
+                'is_neural':  False,
+                'n_model':    None
+            }
+            for k,v in new_fields.items():
+                if k not in chan_info:
+                    chan_info[k] = v
+
+            # load the neural model (if it exists)
+            if channels[id]['is_neural']:
+                channels[id]['n_model'] = keras_load_model(f'neural_channels/{id}.tf')
+                print('N->', id) # loaded neural
+
+            print('-->', id) # loaded
 
 # generates a message
 async def generate_channel(id, act_id):
@@ -281,12 +306,46 @@ async def generate_channel(id, act_id):
     if channel_exists(id) and id not in channels:
         await load_channel(id, None)
 
-    if channels[id]['model'] == None:
-        return GEN_FAILURE
+    if channels[id]['is_neural']: # neural net
+        chan_info = channels[id]
+        final_buf = chan_info['n_buffer']
+        seq_len   = chan_info['n_seq_len']
+        to_num    = chan_info['n_convert_to']
+        from_num  = chan_info['n_convert_from']
+        model     = chan_info['n_model']
 
-    generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
-    if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
-        return GEN_FAILURE
+        # start with the start indicator
+        generated_msg = '\1' * seq_len
+
+        # stop at the stop indicator (limit to 50 chars)
+        last_char, cnt = '', 0
+        while last_char != '\2' and cnt < 50:
+            encoded = np.array([to_num[c] for c in generated_msg][-seq_len:])
+            encoded = np_utils.to_categorical(encoded, num_classes=len(to_num))
+            encoded = encoded.reshape(1, seq_len, len(to_num))
+
+            # generate a char and convert it to an actual char
+            out_tensor = np.argmax(model.predict(encoded), axis=-1)
+            out_idx = out_tensor[0]
+            last_char = from_num[str(out_idx)]
+
+            generated_msg += last_char
+            cnt += 1
+
+        generated_msg = generated_msg.replace('\n', ' ').strip().replace('\1', '').replace('\2', '')
+        if generated_msg == '':
+            return GEN_FAILURE
+
+        final_buf += ' ' + generated_msg
+        chan_info['n_buffer'] = final_buf[-seq_len:]
+
+    else: # markov chain
+        if channels[id]['model'] == None:
+            return GEN_FAILURE
+
+        generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
+        if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
+            return GEN_FAILURE
 
     # apply the (optional) UwU filter
     if channels[act_id]['uwumode']:
@@ -323,33 +382,62 @@ async def generate_channel_threaded(chan, cnt=1, id=-1):
     except Forbidden:
         pass
 
-# trans a model on a message
-def train(id, text):
-    try:
-        # join period-separated sentences by a new line
-        text = '\n'.join(text.split('.'))
+# trains a model on a message
+def train(id, text_list):
+    def _do_train(id, text_list):
+        try:
+            with channel_lock(id):
+                chan_info = channels[id]
+                if chan_info['is_neural']: # neural net
+                    final_buf = chan_info['n_buffer'] + ''.join([f'\1{s}\2' for s in text_list])
+                    seq_len   = chan_info['n_seq_len']
+                    to_num    = chan_info['n_convert_to']
 
-        # create a new model if it doesn't exist
-        if channels[id]['model'] == None:
-            channels[id]['model'] = markovify.NewlineText(text)
+                    # make a lsit of sequences
+                    seqs = []
+                    for i in range(seq_len, len(final_buf)):
+                        seqs.append(final_buf[i-seq_len : i+1])
+                    seqs = [[float(to_num[c]) if c in to_num else to_num[' '] for c in s] for s in seqs]
 
-        # create a model with this message and combine it with the already existing one ("train" the model)
-        new_model = markovify.NewlineText(text)
-        channels[id]['model'] = markovify.combine([channels[id]['model'], new_model])
+                    # cut the buffer
+                    chan_info['n_buffer'] = final_buf[-seq_len-1:]
 
-        # increment the number of collected messages
-        channels[id]['collected'] += 1
+                    # make a list of X|->Y associations
+                    seqs = np.array(seqs)
+                    X, Y = seqs[:,:-1], seqs[:,-1]
+                    X = np.array([np_utils.to_categorical(s, num_classes=len(to_num)) for s in X])
+                    Y =           np_utils.to_categorical(Y, num_classes=len(to_num))
 
-        print(' + ', id)
-            
-    except:
-        pass
+                    # train the model
+                    chan_info['n_model'].fit(X, Y, epochs=25, verbose=1)
+
+                else: # Markov chain
+                    for text in text_list:
+                        # join period-separated sentences by a new line
+                        text = '\n'.join(text.split('.'))
+
+                        # create a new model if it doesn't exist
+                        if chan_info['model'] == None:
+                            chan_info['model'] = markovify.NewlineText(text)
+
+                        # create a model with this message and combine it with the already existing one ("train" the model)
+                        new_model = markovify.NewlineText(text)
+                        chan_info['model'] = markovify.combine([channels[id]['model'], new_model])
+
+                # increment the number of collected messages
+                chan_info['collected'] += len(text_list)
+
+                print(' + ', id)
+                        
+        except Exception as ex:
+            traceback.print_exception(type(ex), ex, ex.__traceback__)
+
+    Thread(target=_do_train, args=(id, text_list), name='Training thread').start()
 
 # trains a channel on previous messages (takes some time, meant to be run in a separate thread)
 def train_on_prev(chan_id, limit):
     msgs = get_msgs(chan_id, 0, limit)
-    for m in msgs:
-        train(chan_id, m['content'])
+    train(chan_id, [m['content'] for m in msgs])
 
 
 
@@ -362,22 +450,66 @@ def on_bot_exit():
     # I'll say goodbye soon
     # Though it's the end of the world
     # Don't blame yourself, no
-    print('<-> CLOSING')
-    for chan_id in channels:
-        save_channel(chan_id)
+    print('<-> SAVING CHANNELS, DON\'T INTERRUPT')
+    with global_c_lock:
+        for chan_id in channels:
+            save_channel(chan_id)
+
+def bot_presence_thread():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    while True:
+        loop.run_until_complete(upd_bot_presence())
+        time.sleep(10)
+
+async def upd_bot_presence():
+    await bot.change_presence(activity=discord.Activity(
+        type=discord.ActivityType.playing,
+        name=f'around in {str(len(bot.guilds))} servers | "{bot.command_prefix}help" for help'
+    ))
 
 @bot.event
 async def on_ready():
-    await load_channel(0, None)
+    global process
 
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.playing,
-        name=f'with markov chains | "{bot.command_prefix}help" for help'
-    ))
+    await load_channel(0, None)
+    Thread(target=bot_presence_thread, name='Presence updater').start()
+    atexit.register(on_bot_exit)
+    process = psutil.Process(os.getpid())
     print('Everything OK!')
 
-    atexit.register(on_bot_exit)
+@bot.command(pass_context=True, name='make_neural')
+async def info_cmd(ctx):
+    if not await bot.is_owner(ctx.message.author):
+        await ctx.send(CREATOR_ONLY)
+        return
 
+    # Erase old data
+    channel_info = channels[ctx.message.channel.id]
+    channel_info['is_neural'] = True
+    channel_info['collected'] = 0
+    channel_info['model']     = None
+    channel_info['ustats']    = {}
+
+    # Default NN settigs
+    seq_len = 25
+    channel_info['n_seq_len'] = seq_len
+    channel_info['n_buffer']  = '\1' * seq_len
+
+    # Create conversion dicts
+    chars = list('\1\2' + string.printable)
+    channel_info['n_convert_to']   = {chars[i]:i for i in range(len(chars))}
+    channel_info['n_convert_from'] = {str(v):k for k,v in channel_info['n_convert_to'].items()}
+
+    # Create the model itself
+    model = Sequential()
+    channel_info['n_model'] = model
+    model.add(LSTM(16, input_shape=(seq_len, len(chars)), return_sequences=False))
+    model.add(Dropout(0.05))
+    model.add(Dense(len(chars), kernel_initializer='normal', activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+    await ctx.send(MADE_NEURAL)
 
 @bot.command(pass_context=True, name='help')
 async def help_cmd(ctx):
@@ -431,7 +563,33 @@ async def status_cmd(ctx):
     embed.add_field(name='Messages added to the global model by everyone everywhere', value=str(channels[0]['collected']))
     embed.add_field(name='Automatically sending messages after each',                 value=str('[disabled]' if autorate == 0 else autorate))
     embed.add_field(name='UwU mode',                                                  value='enabled' if chan_info['uwumode'] else 'disabled')
-    embed.add_field(name='Notice',                                                    value='Please see `/d help`')
+
+    if chan_info['is_neural']:
+        embed.add_field(name='Neural :brain:', value='This model is using a neural network instead of a Markov chain.')
+        embed.add_field(name='Neural Buffer',  value=f'`{chan_info["n_buffer"]}`')
+    await ctx.send(embed=embed)
+
+@bot.command(pass_context=True, name='stats')
+async def stats_cmd(ctx):
+    global process
+
+    embed = discord.Embed(title='Deuterium stats', color=EMBED_COLOR)
+
+    chan_cnt  = len(os.listdir('channels')) - 1 # descrement because of the global model
+    chan_size = 0
+    for path, _, files in os.walk('channels'):
+        for f in files:
+            chan_size += os.path.getsize(os.path.join(path, f))
+    for path, _, files in os.walk('neural_channels'):
+        for f in files:
+            chan_size += os.path.getsize(os.path.join(path, f))
+
+    embed.add_field(name='Total model count', value=f'**`{str(chan_cnt)}`**')
+    embed.add_field(name='Disk space used',   value=f'**`{str(chan_size // (1024**2))} MiB`**')
+    embed.add_field(name='Loaded models',     value=f'**`{str(len(channels))}`**')
+
+    embed.add_field(name='RAM used',   value=f'**`{str(process.memory_info().rss // (1024**2))} MiB`**')
+    embed.add_field(name='CPU used',   value=f'**`{str(process.cpu_percent())}%`**')
     await ctx.send(embed=embed)
 
 @bot.command(pass_context=True, name='uwu')
@@ -571,8 +729,11 @@ async def autorate_cmd(ctx, *args):
 async def on_command_error(ctx, ex: Exception):
     if type(ex) is discord.ext.commands.errors.CommandNotFound:
         await ctx.send(UNKNOWN_CMD)
+    elif type(ex) is Forbidden:
+        pass # ignore
     else:
         print(ex)
+        await exception_handler(type(ex), ex, ex.__traceback__)
 
 
 
@@ -603,11 +764,12 @@ async def on_message(msg: discord.Message):
     # create a new channel object if it doesn't exist
     if chan_id not in channels:
         chan_info = {
-            'model':    None,
-            'collect':  True,  'collected':  0,
-            'autorate': 20,    'total_msgs': 0,
-            'gcollect': False, 'gcollected': 0,
-            'uwumode':  False, 'ustats':     {}
+            'model':     None,
+            'is_neural': False, 'n_model':    None,
+            'collect':   True,  'collected':  0,
+            'autorate':  20,    'total_msgs': 0,
+            'gcollect':  False, 'gcollected': 0,
+            'uwumode':   False, 'ustats':     {}
         }
         channels[chan_id] = chan_info
     
@@ -622,7 +784,7 @@ async def on_message(msg: discord.Message):
     # it's an ordinary message and not a command
     # train on this message if allowed
     if chan_info['collect']:
-        train(chan_id, msg.content)
+        train(chan_id, [msg.content])
 
         # add a score to the user
         ustats = chan_info['ustats']
@@ -633,7 +795,7 @@ async def on_message(msg: discord.Message):
 
     # train the global model if allowed
     if chan_info['gcollect']:
-        train(0, msg.content)
+        train(0, [msg.content])
         chan_info['gcollected'] += 1
 
     # generate a message if needed
@@ -643,6 +805,20 @@ async def on_message(msg: discord.Message):
     chan_info['total_msgs'] += 1
 
     # unload the channel in a while
-    schedule_unload(chan_id)
+    if not chan_info['is_neural']:
+        schedule_unload(chan_id)
+
+async def exception_handler(exctype, excvalue, exctraceback):
+    if exctype is KeyboardInterrupt or exctype is SystemExit:
+        sys.__excepthook__(exctype, excvalue, exctraceback)
+
+    traceback.print_exception(exctype, excvalue, exctraceback)
+    await (await bot.application_info()).owner.send(f':x: **Exception**\n```\n{str(excvalue)}\n```')
+
+def exception_wrapper(exctype, excvalue, exctraceback):
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(exception_handler)
+
+sys.excepthook = exception_wrapper
 
 bot.run(TOKEN)
