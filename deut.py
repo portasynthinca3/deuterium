@@ -20,8 +20,48 @@ Please consider supporting us (`/d support`).
 '''
 
 ANNOUNCEMENT = '''
-I have moved to a new server with an AMD EPYC server CPU! This means that I'll probably be able to implement a new message generation technique
+Dec. 19th 2020:
+I'm making Deuterium act more like a human, not a random word sequence generating mess
 '''
+
+MOODS = [
+    {
+        'title':             ':cry: Depressed',
+        'game_response_pos': [],
+        'game_response_neg': ['I don\'t really want to play now'],
+        'suggest_chance':    0,
+        'pos_chance':        0,
+        'treat_chance':      0,
+        'treats':            []
+    },
+    {
+        'title':             ':pensive: Sad',
+        'game_response_pos': ['Uhm, okay...'],
+        'game_response_neg': ['Not now, sorry'],
+        'suggest_chance':    0,
+        'pos_chance':        0.2,
+        'treat_chance':      0,
+        'treats':            []
+    },
+    {
+        'title':             ':neutral_face: Neutral',
+        'game_response_pos': ['Sure, but I have to go soon...'],
+        'game_response_neg': ['Meh, I\'ve got some homework to do, sorry'],
+        'suggest_chance':    0.0025,
+        'pos_chance':        0.5,
+        'treat_chance':      0.05,
+        'treats':            ['candy :candy:', 'chocolate bar :chocolate_bar:']
+    },
+    {
+        'title':             ':smile: Happy',
+        'game_response_pos': ['Of course, let\'s go!'],
+        'game_response_neg': ['I\'d love to have a game with you, but unfortunately I can\'t right now. Wanna play later?'],
+        'suggest_chance':    0.005,
+        'pos_chance':        0.95,
+        'treat_chance':      0.1,
+        'treats':            ['candy :candy:', 'chocolate bar :chocolate_bar:', 'lollipop :lollipop:']
+    }
+]
 
 UNKNOWN_CMD      = ':x: **Unknown command - type `/d help` for help**'
 GEN_FAILURE      = ':x: **This model has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
@@ -39,7 +79,13 @@ RESET_SUCCESS    = '**Successfully reset training data for this channel** :white
 AUTOGEN_DISABLED = '**Auto-generation disabled** :white_check_mark:'
 AUTOGEN_SETTO    = '**Auto-generation rate set to {0}** :white_check_mark:'
 CREATOR_ONLY     = ':x: **This command can only be executed by the creator of the bot**'
-MADE_NEURAL      = '**This channel is now using a neural network** :white_check_mark:'
+RPS_ERROR        = ':x: **I\'m sorry, {0} is playing Rock-Paper-Scissors with me already**'
+RPS_INSTRUCTIONS = '**Alright, say `rock`, `paper` or `scissors`!** :white_check_mark:'
+RPS_BOTS_MOVE    = 'Alright, I go with **{0}**'
+RPS_USER         = '**You won :clap:**'
+RPS_DRAW         = '**It\'s a draw :pushpin:**'
+RPS_BOT          = '**I won :smiley:**'
+RPS_SUGGESTION   = '**Hey {0}! Do you want to play Rock-Paper-Scissors with me? If so, type `/d rps`** :smiley:'
 
 BATCH_SIZE = 100
 
@@ -57,44 +103,36 @@ from multiprocessing import Process
 from discord.errors import Forbidden
 from json import JSONDecodeError
 
-import numpy as np
-from keras.utils import np_utils
-from keras.preprocessing.sequence import pad_sequences
-from keras.models import load_model as keras_load_model
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, Activation, Dropout
-
 # prepare constant embeds
 EMBED_COLOR = 0xe6f916
 
 HELP_CMDS_REGULAR = {
-    'help':                 'sends this message',
-    'status':               'tells you the current settings and stats',
-    'stats':                'global Deuterium stats',
-    'train <count>':        'trains the model using the last <count> messages in this channel',
-    'gen':                  'generates a message immediately',
-    'gen <count>':          'generates <count> messages immediately',
-    'gen #channel-mention': 'generates a message using the mentioned channel model',
-    'ggen':                 'generates a message immediately (using the global model)',
-    'support':              'ways to support this project',
-    'privacy':              'our privacy policy',
-    'uwu <enable/disable>': 'enable/disable the UwU mode (don\'t.)',
-    'info':                 'who created this?',
-    'scoreboard':           'shows top 10 most active users',
-    #'gscoreboard':          'shows top 10 most active users in the global model'
+    'help':                 ':information_source: sends this message',
+    'status':               ':green_circle: tells you the current settings and stats',
+    'stats':                ':yellow_circle: Deuterium resource usage',
+    'train <count>':        ':books: trains the model using the last <count> messages in this channel',
+    'gen':                  ':new: generates a message immediately',
+    'gen <count>':          ':1234: generates <count> messages immediately',
+    'gen #channel-mention': ':level_slider: generates a message using the mentioned channel model',
+    'ggen':                 ':rocket: generates a message immediately (using the global model)',
+    'support':              ':question: ways to support this project',
+    'privacy':              ':lock: our privacy policy',
+    'uwu <enable/disable>': ':eyes: enable/disable the UwU mode',
+    'info':                 ':thinking: who created this?',
+    'scoreboard':           ':100: top 10 most active users',
+    'rps':                  ':rock: plays Rock-Paper-Scissors with the bot'
 }
 HELP_CMDS_ADMIN = {
-    'collect <yes/no>':    'allows or denies training using new messages',
-    'gcollect <yes/no>':   'allows or denies training the global model using new messages',
-    'reset':               'resets the training model',
-    'autorate <rate>':     'sets the automatic generation rate (one bot message per each <rate> normal ones)',
-    #'arole @role-mention': 'grants administrative permissions to the mentioned role. Only one role can have them at a time'
+    'collect <yes/no>':    ':book: allows or denies learning new messages',
+    'gcollect <yes/no>':   ':books: allows or denies learning new messages to contribute to the global model',
+    'reset':               ':rotating_light: resets the training model',
+    'autorate <rate>':     ':bar_chart: sets the automatic generation rate (one bot message per each <rate> normal ones +/- half of this value)'
 }
 
 HELP = discord.Embed(title='Deuterium commands', color=EMBED_COLOR)
-HELP.add_field(inline=False, name='Latest Announcement', value=ANNOUNCEMENT)
+HELP.add_field(inline=False, name=':loudspeaker: Latest Announcement', value=ANNOUNCEMENT)
 
-HELP.add_field(inline=False, name='*All comands start with `/d `*', value='*ex.: `/d help`*')
+HELP.add_field(inline=False, name=':exclamation: *All comands start with `/d `*', value='*ex.: `/d help`*')
 
 HELP.add_field(inline=False, name='REGULAR COMMANDS', value='Can be executed by anybody')
 for c in HELP_CMDS_REGULAR:
@@ -176,7 +214,7 @@ def get_msgs(channel, before, limit):
     # make the request
     beforeStr = '' if before == 0 else f'&before={before}'
     response = requests.get(f'https://discord.com/api/v8/channels/{channel}/messages?limit={limit}{beforeStr}',
-        headers={ 'Authorization': 'Bot ' + TOKEN }).json()
+        headers={'Authorization': 'Bot ' + TOKEN}).json()
 
     if isinstance(response, dict):
         # rate limiting
@@ -186,6 +224,77 @@ def get_msgs(channel, before, limit):
 
     # return simplified data
     return [{'id':int(x['id']), 'content':x['content']} for x in response]
+
+# increases the mood value
+def channel_add_mood(id, mood):
+    chan_info = channels[id]
+    chan_info['mood'] += mood
+    chan_info['mood'] = min(100, max(0, chan_info['mood']))
+
+# gets the channel mood
+def channel_mood(id):
+    return MOODS[min(3, channels[id]['mood'] * len(MOODS) // 100)]
+
+# starts a R-P-S game
+async def channel_game_start(channel, author):
+    chan_info = channels[channel.id]
+
+    # check if we're already playing
+    if 'rps_id' in chan_info:
+        await channel.send(RPS_ERROR.format(author.mention))
+        return
+
+    # do we really want to play?
+    mood = channel_mood(channel.id)
+    if random.random() >= mood['pos_chance']:
+        await channel.send(random.choice(mood['game_response_neg']))
+        return
+    
+    # if not, set the author and send instructions
+    chan_info['rps_id'] = author.id
+    await channel.send('**' + random.choice(mood['game_response_pos']) + '**\n' + RPS_INSTRUCTIONS)
+
+# processes a R-P-S game
+async def channel_game_process(channel, msg, author):
+    chan_info = channels[channel.id]
+
+    # word-to-num map and score matrix
+    rps_map    = {'rock': 0, 'paper': 1, 'scissors': 2}
+    rps_revmap = {0: 'rock', 1: 'paper', 2: 'scissors'}
+    rps_matrix = [[0, 1, -1], [-1, 0, 1], [1, -1, 0]]
+
+    # check if the message _contains_ one of three terms
+    contains_cnt, player_move = 0, -1
+    for t,v in rps_map.items():
+        if t in msg.content.lower():
+            contains_cnt += 1
+            player_move = v
+
+    if contains_cnt != 1:
+        return
+
+    # check whether we're playing or not
+    if 'rps_id' not in chan_info:
+        return
+    if chan_info['rps_id'] != author.id:
+        await channel.send(RPS_ERROR.format(author.mention))
+        return
+
+    bot_move = random.randint(0, 2)
+    await channel.send(RPS_BOTS_MOVE.format(rps_revmap[bot_move]))
+
+    score = rps_matrix[bot_move][player_move]
+
+    if score > 0:
+        await channel.send(RPS_USER)
+        channel_add_mood(channel.id, -random.randint(1, 10))
+    elif score == 0:
+        await channel.send(RPS_DRAW)
+    elif score < 0:
+        await channel.send(RPS_BOT)
+        channel_add_mood(channel.id, random.randint(1, 10))
+
+    del chan_info['rps_id']
 
 # sets a unload timer
 def schedule_unload(id):
@@ -235,13 +344,6 @@ def save_channel(id):
             if to_jsonify['model'] is not None:
                 to_jsonify['model'] = to_jsonify['model'].to_dict()
 
-            # save the neural model separately
-            n_model = to_jsonify['n_model']
-            if n_model is not None:
-                n_model.save(f'neural_channels/{id}.tf', save_format='tf')
-                print('<-N', id) # dumped neural
-                del to_jsonify['n_model']
-
             f.write(json.dumps(to_jsonify).encode('utf-8'))
 
     print('<--', id) # dumped
@@ -281,21 +383,16 @@ async def load_channel(id, channel):
             # add fields that appeared in newer versions of the bot
             chan_info = channels[id]
             new_fields = {
-                'total_msgs': 0,
-                'uwumode':    False,
-                'ustats':     {},
-
-                'is_neural':  False,
-                'n_model':    None
+                'total_msgs':         0,
+                'uwumode':            False,
+                'ustats':             {},
+                'next_gen_milestone': chan_info['autorate'],
+                'mood':               50,
+                'mood_title':         MOODS[2]['title']
             }
             for k,v in new_fields.items():
                 if k not in chan_info:
                     chan_info[k] = v
-
-            # load the neural model (if it exists)
-            if channels[id]['is_neural']:
-                channels[id]['n_model'] = keras_load_model(f'neural_channels/{id}.tf')
-                print('N->', id) # loaded neural
 
             print('-->', id) # loaded
 
@@ -306,46 +403,12 @@ async def generate_channel(id, act_id):
     if channel_exists(id) and id not in channels:
         await load_channel(id, None)
 
-    if channels[id]['is_neural']: # neural net
-        chan_info = channels[id]
-        final_buf = chan_info['n_buffer']
-        seq_len   = chan_info['n_seq_len']
-        to_num    = chan_info['n_convert_to']
-        from_num  = chan_info['n_convert_from']
-        model     = chan_info['n_model']
+    if channels[id]['model'] == None:
+        return GEN_FAILURE
 
-        # start with the start indicator
-        generated_msg = '\1' * seq_len
-
-        # stop at the stop indicator (limit to 50 chars)
-        last_char, cnt = '', 0
-        while last_char != '\2' and cnt < 50:
-            encoded = np.array([to_num[c] for c in generated_msg][-seq_len:])
-            encoded = np_utils.to_categorical(encoded, num_classes=len(to_num))
-            encoded = encoded.reshape(1, seq_len, len(to_num))
-
-            # generate a char and convert it to an actual char
-            out_tensor = np.argmax(model.predict(encoded), axis=-1)
-            out_idx = out_tensor[0]
-            last_char = from_num[str(out_idx)]
-
-            generated_msg += last_char
-            cnt += 1
-
-        generated_msg = generated_msg.replace('\n', ' ').strip().replace('\1', '').replace('\2', '')
-        if generated_msg == '':
-            return GEN_FAILURE
-
-        final_buf += ' ' + generated_msg
-        chan_info['n_buffer'] = final_buf[-seq_len:]
-
-    else: # markov chain
-        if channels[id]['model'] == None:
-            return GEN_FAILURE
-
-        generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
-        if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
-            return GEN_FAILURE
+    generated_msg = channels[id]['model'].make_short_sentence(280, tries=50)
+    if generated_msg == None or len(generated_msg.replace('\n', ' ').strip()) == 0:
+        return GEN_FAILURE
 
     # apply the (optional) UwU filter
     if channels[act_id]['uwumode']:
@@ -388,41 +451,18 @@ def train(id, text_list):
         try:
             with channel_lock(id):
                 chan_info = channels[id]
-                if chan_info['is_neural']: # neural net
-                    final_buf = chan_info['n_buffer'] + ''.join([f'\1{s}\2' for s in text_list])
-                    seq_len   = chan_info['n_seq_len']
-                    to_num    = chan_info['n_convert_to']
 
-                    # make a lsit of sequences
-                    seqs = []
-                    for i in range(seq_len, len(final_buf)):
-                        seqs.append(final_buf[i-seq_len : i+1])
-                    seqs = [[float(to_num[c]) if c in to_num else to_num[' '] for c in s] for s in seqs]
+                for text in text_list:
+                    # join period-separated sentences by a new line
+                    text = '\n'.join(text.split('.'))
 
-                    # cut the buffer
-                    chan_info['n_buffer'] = final_buf[-seq_len-1:]
+                    # create a new model if it doesn't exist
+                    if chan_info['model'] == None:
+                        chan_info['model'] = markovify.NewlineText(text)
 
-                    # make a list of X|->Y associations
-                    seqs = np.array(seqs)
-                    X, Y = seqs[:,:-1], seqs[:,-1]
-                    X = np.array([np_utils.to_categorical(s, num_classes=len(to_num)) for s in X])
-                    Y =           np_utils.to_categorical(Y, num_classes=len(to_num))
-
-                    # train the model
-                    chan_info['n_model'].fit(X, Y, epochs=25, verbose=1)
-
-                else: # Markov chain
-                    for text in text_list:
-                        # join period-separated sentences by a new line
-                        text = '\n'.join(text.split('.'))
-
-                        # create a new model if it doesn't exist
-                        if chan_info['model'] == None:
-                            chan_info['model'] = markovify.NewlineText(text)
-
-                        # create a model with this message and combine it with the already existing one ("train" the model)
-                        new_model = markovify.NewlineText(text)
-                        chan_info['model'] = markovify.combine([channels[id]['model'], new_model])
+                    # create a model with this message and combine it with the already existing one ("train" the model)
+                    new_model = markovify.NewlineText(text)
+                    chan_info['model'] = markovify.combine([channels[id]['model'], new_model])
 
                 # increment the number of collected messages
                 chan_info['collected'] += len(text_list)
@@ -478,39 +518,6 @@ async def on_ready():
     process = psutil.Process(os.getpid())
     print('Everything OK!')
 
-@bot.command(pass_context=True, name='make_neural')
-async def info_cmd(ctx):
-    if not await bot.is_owner(ctx.message.author):
-        await ctx.send(CREATOR_ONLY)
-        return
-
-    # Erase old data
-    channel_info = channels[ctx.message.channel.id]
-    channel_info['is_neural'] = True
-    channel_info['collected'] = 0
-    channel_info['model']     = None
-    channel_info['ustats']    = {}
-
-    # Default NN settigs
-    seq_len = 25
-    channel_info['n_seq_len'] = seq_len
-    channel_info['n_buffer']  = '\1' * seq_len
-
-    # Create conversion dicts
-    chars = list('\1\2' + string.printable)
-    channel_info['n_convert_to']   = {chars[i]:i for i in range(len(chars))}
-    channel_info['n_convert_from'] = {str(v):k for k,v in channel_info['n_convert_to'].items()}
-
-    # Create the model itself
-    model = Sequential()
-    channel_info['n_model'] = model
-    model.add(LSTM(16, input_shape=(seq_len, len(chars)), return_sequences=False))
-    model.add(Dropout(0.05))
-    model.add(Dense(len(chars), kernel_initializer='normal', activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-    await ctx.send(MADE_NEURAL)
-
 @bot.command(pass_context=True, name='help')
 async def help_cmd(ctx):
     await ctx.send(embed=HELP)
@@ -532,6 +539,10 @@ def get_key(d, val):
         if v == val:
             return k
     return None
+
+@bot.command(pass_context=True, name='rps')
+async def scoreboard_cmd(ctx):
+    await channel_game_start(ctx.channel, ctx.message.author)
 
 @bot.command(pass_context=True, name='scoreboard')
 async def scoreboard_cmd(ctx):
@@ -556,17 +567,16 @@ async def status_cmd(ctx):
     chan_info = channels[ctx.message.channel.id]
     autorate = chan_info['autorate']
     embed = discord.Embed(title='Deuterium status', color=EMBED_COLOR)
-    embed.add_field(name='Training on messages from this channel',                    value='yes' if chan_info['collect'] else 'no')
-    embed.add_field(name='Total messages trained on',                                 value=str(chan_info['collected']))
-    embed.add_field(name='Contributing to the global model',                          value='yes' if chan_info['gcollect'] else 'no')
-    embed.add_field(name='Messages added to the global model by this channel',        value=str(chan_info['gcollected']))
-    embed.add_field(name='Messages added to the global model by everyone everywhere', value=str(channels[0]['collected']))
-    embed.add_field(name='Automatically sending messages after each',                 value=str('[disabled]' if autorate == 0 else autorate))
-    embed.add_field(name='UwU mode',                                                  value='enabled' if chan_info['uwumode'] else 'disabled')
+    embed.add_field(name=':books: Learning messages in this channel',                        value='yes' if chan_info['collect'] else 'no')
+    embed.add_field(name=':1234: Total messages trained on',                                 value=str(chan_info['collected']))
+    embed.add_field(name=':rocket: Contributing to the global model',                        value='yes' if chan_info['gcollect'] else 'no')
+    embed.add_field(name=':1234: Messages added to the global model by this channel',        value=str(chan_info['gcollected']))
+    embed.add_field(name=':1234: Messages added to the global model by everyone everywhere', value=str(channels[0]['collected']))
+    embed.add_field(name=':new: Automatically sending messages after each',                  value=str('[disabled]' if autorate == 0 else autorate))
 
-    if chan_info['is_neural']:
-        embed.add_field(name='Neural :brain:', value='This model is using a neural network instead of a Markov chain.')
-        embed.add_field(name='Neural Buffer',  value=f'`{chan_info["n_buffer"]}`')
+    embed.add_field(name=':sparkles: Mood', value=f'{chan_info["mood_title"]} ({chan_info["mood"]}%)')
+    embed.add_field(name=':eyes: UwU mode', value='enabled' if chan_info['uwumode'] else 'disabled')
+
     await ctx.send(embed=embed)
 
 @bot.command(pass_context=True, name='stats')
@@ -578,9 +588,6 @@ async def stats_cmd(ctx):
     chan_cnt  = len(os.listdir('channels')) - 1 # descrement because of the global model
     chan_size = 0
     for path, _, files in os.walk('channels'):
-        for f in files:
-            chan_size += os.path.getsize(os.path.join(path, f))
-    for path, _, files in os.walk('neural_channels'):
         for f in files:
             chan_size += os.path.getsize(os.path.join(path, f))
 
@@ -700,6 +707,10 @@ async def reset_cmd(ctx):
     chan_info = channels[ctx.message.channel.id]
     chan_info['model'] = None
     chan_info['collected'] = 0
+    chan_info['total_msgs'] = 0
+    chan_info['next_gen_milestone'] = 0
+    chan_info['mood'] = 50
+    chan_info['mood_title'] = MOODS[2]['title']
     await ctx.send(RESET_SUCCESS)
 
 @bot.command(pass_context=True, name='autorate')
@@ -765,7 +776,6 @@ async def on_message(msg: discord.Message):
     if chan_id not in channels:
         chan_info = {
             'model':     None,
-            'is_neural': False, 'n_model':    None,
             'collect':   True,  'collected':  0,
             'autorate':  20,    'total_msgs': 0,
             'gcollect':  False, 'gcollected': 0,
@@ -774,6 +784,7 @@ async def on_message(msg: discord.Message):
         channels[chan_id] = chan_info
     
     chan_info = channels[chan_id]
+    chan_info['total_msgs'] += 1
 
     # check if it's a command
     if msg.content.startswith(bot.command_prefix):
@@ -798,15 +809,39 @@ async def on_message(msg: discord.Message):
         train(0, [msg.content])
         chan_info['gcollected'] += 1
 
-    # generate a message if needed
-    if chan_info['autorate'] > 0 and chan_info['total_msgs'] % chan_info['autorate'] == 0:
+    # react to mentions
+    if bot.user in msg.mentions:
+        await channel.send(f'{msg.author.mention} {await generate_channel(chan_id, chan_id)}')
+        return
+
+    # mood logic
+    channel_add_mood(chan_id, random.randint(-2, 2))
+    mood = channel_mood(chan_id)
+    chan_info['mood_title'] = mood['title']
+
+    # suggest playing a game
+    if random.random() <= mood['suggest_chance']:
+        await channel.send(RPS_SUGGESTION.format(msg.author.mention))
+        return
+
+    # give a treat to the sender
+    if random.random() <= mood['treat_chance']:
+        await channel.send(f'Hey {msg.author.mention}! Have a {random.choice(mood["treats"])}')
+        return
+
+    # process the game
+    await channel_game_process(channel, msg, msg.author)
+
+    # generate a message automatically
+    rate = chan_info['autorate']
+    if rate > 0 and chan_info['total_msgs'] >= chan_info['next_gen_milestone']:
+        # set next milestone
+        qrate = rate / 4
+        chan_info['next_gen_milestone'] = chan_info['total_msgs'] + random.randint(rate - qrate, rate + qrate)
+
+        # generate a message
         await generate_channel_threaded(channel)
-
-    chan_info['total_msgs'] += 1
-
-    # unload the channel in a while
-    if not chan_info['is_neural']:
-        schedule_unload(chan_id)
+        return
 
 async def exception_handler(exctype, excvalue, exctraceback):
     if exctype is KeyboardInterrupt or exctype is SystemExit:
