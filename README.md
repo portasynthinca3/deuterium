@@ -11,3 +11,10 @@ If you integrate this bot's functionality into your own bot, or even just straig
 # setting up
 Required libraries: `markovify`, `discord`\
 Required environment variables: `DEUT_TOKEN` should contain your bot token
+
+# screenshots
+![](promo/promo1.png)
+
+![](promo/promo2.png)
+
+![](promo/promo3.png)
