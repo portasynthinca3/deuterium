@@ -16,12 +16,11 @@ Hi!
 This project was created by portasynthinca3 (https://github.com/portasynthinca3).
 The sort of "backbone" of it is the markovify library (https://github.com/jsvine/markovify).
 You can join our support server if you're experiencing any issues: https://discord.gg/N52uWgD.
-Please consider supporting us (`/d support`).
+Please consider supporting us (`!!d support`).
 '''
 
 ANNOUNCEMENT = '''
-Dec. 19th 2020:
-I'm making Deuterium act more like a human, not a random word sequence generating mess
+The global model just got reset on Jan 27th!
 '''
 
 MOODS = [
@@ -49,7 +48,7 @@ MOODS = [
         'game_response_neg': ['Meh, I\'ve got some homework to do, sorry'],
         'suggest_chance':    0.0025,
         'pos_chance':        0.5,
-        'treat_chance':      0.05,
+        'treat_chance':      0.005,
         'treats':            ['candy :candy:', 'chocolate bar :chocolate_bar:']
     },
     {
@@ -58,21 +57,22 @@ MOODS = [
         'game_response_neg': ['I\'d love to have a game with you, but unfortunately I can\'t right now. Wanna play later?'],
         'suggest_chance':    0.005,
         'pos_chance':        0.95,
-        'treat_chance':      0.1,
+        'treat_chance':      0.01,
         'treats':            ['candy :candy:', 'chocolate bar :chocolate_bar:', 'lollipop :lollipop:']
     }
 ]
 
-UNKNOWN_CMD      = ':x: **Unknown command - type `/d help` for help**'
-GEN_FAILURE      = ':x: **This model has been trained on too little messages to generate sensible ones. Check back again later or use `/d train` - see `/d help` for help**'
-INVALID_ARG      = ':x: **(One of) the argument(s) is(/are) invalid - see `/d help` for help**'
-ONE_ARG          = ':x: **This command requires one argument - see `/d help` for help**'
-LEQ_ONE_ARG      = ':x: **This command requires zero or one arguments - see `/d help` for help**'
+NEW_PREFIX       = ':information_source: **The command prefix has been changed to `!!d ` to avoid collision with Discord slash commands**'
+UNKNOWN_CMD      = ':x: **Unknown command - type `!!d help` for help**'
+GEN_FAILURE      = ':x: **This model has been trained on too little messages to generate sensible ones. Check back again later or use `!!d train` - see `!!d help` for help**'
+INVALID_ARG      = ':x: **(One of) the argument(s) is(/are) invalid - see `!!d help` for help**'
+ONE_ARG          = ':x: **This command requires one argument - see `!!d help` for help**'
+LEQ_ONE_ARG      = ':x: **This command requires zero or one arguments - see `!!d help` for help**'
 SETS_UPD         = '**Settings updated successfully** :white_check_mark:'
-INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `/d help` for help**'
-INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `/d help` for help**'
+INVALID_CHANNEL  = ':x: **The channel is either invalid or not a channel at all - see `!!d help` for help**'
+INVALID_MSG_CNT  = ':x: **You must request no less than 1 or more than 1000 messages - see `!!d help` for help**'
 RETRIEVING_MSGS  = '**Training. It will take some time, be patient** :white_check_mark:'
-JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupt in a recent change to how the bot stores channel info. Please either do a `/d reset` or join our support server (<https://discord.gg/N52uWgD>). If this problem stops occuring in a minute or so, that\'s probably because I restored a backup.**'
+JSON_DEC_FAILURE = ':x: **The model failed to load, probably because it became corrupted as a result of me carelessly shutting the bot down, a power outage or other things, I\'m sorry. Please either do a `!!d reset` or join our support server (<https://discord.gg/N52uWgD>)**'
 TOO_MANY_MSGS    = ':x: **Too many messages requested (10 max)**'
 ADMINISTRATIVE_C = ':x: **This command is administrative. Only people with the "administrator" privilege can execute it**'
 RESET_SUCCESS    = '**Successfully reset training data for this channel** :white_check_mark:'
@@ -85,7 +85,7 @@ RPS_BOTS_MOVE    = 'Alright, I go with **{0}**'
 RPS_USER         = '**You won :clap:**'
 RPS_DRAW         = '**It\'s a draw :pushpin:**'
 RPS_BOT          = '**I won :smiley:**'
-RPS_SUGGESTION   = '**Hey {0}! Do you want to play Rock-Paper-Scissors with me? If so, type `/d rps`** :smiley:'
+RPS_SUGGESTION   = '**Hey {0}! Do you want to play Rock-Paper-Scissors with me? If so, type `!!d rps`** :smiley:'
 
 BATCH_SIZE = 100
 
@@ -107,32 +107,36 @@ from json import JSONDecodeError
 EMBED_COLOR = 0xe6f916
 
 HELP_CMDS_REGULAR = {
-    'help':                 ':information_source: sends this message',
-    'status':               ':green_circle: tells you the current settings and stats',
-    'stats':                ':yellow_circle: Deuterium resource usage',
-    'train <count>':        ':books: trains the model using the last <count> messages in this channel',
-    'gen':                  ':new: generates a message immediately',
-    'gen <count>':          ':1234: generates <count> messages immediately',
-    'gen #channel-mention': ':level_slider: generates a message using the mentioned channel model',
-    'ggen':                 ':rocket: generates a message immediately (using the global model)',
-    'support':              ':question: ways to support this project',
-    'privacy':              ':lock: our privacy policy',
-    'uwu <enable/disable>': ':eyes: enable/disable the UwU mode',
-    'info':                 ':thinking: who created this?',
-    'scoreboard':           ':100: top 10 most active users',
-    'rps':                  ':rock: plays Rock-Paper-Scissors with the bot'
+    'help':                     ':information_source: sends this message',
+    'status':                   ':green_circle: tells you the current settings and stats',
+    'stats':                    ':yellow_circle: Deuterium resource usage',
+    'gen':                      ':new: generates a message immediately',
+    'gen <count>':              ':1234: generates <count> messages immediately',
+    'gen #channel-mention':     ':level_slider: generates a message using the mentioned channel model',
+    'ggen':                     ':rocket: generates a message immediately (using the global model)',
+    'support':                  ':question: ways to support this project',
+    'privacy':                  ':lock: our privacy policy',
+    'uwu <enable/disable>':     ':eyes: enable/disable the UwU mode',
+    'info':                     ':thinking: who created this?',
+    'scoreboard':               ':100: top 10 most active users',
+    'rps':                      ':rock: starts a game of Rock-Paper-Scissors with the bot'
 }
 HELP_CMDS_ADMIN = {
-    'collect <yes/no>':    ':book: allows or denies learning new messages',
-    'gcollect <yes/no>':   ':books: allows or denies learning new messages to contribute to the global model',
-    'reset':               ':rotating_light: resets the training model',
-    'autorate <rate>':     ':bar_chart: sets the automatic generation rate (one bot message per each <rate> normal ones +/- half of this value)'
+    'collect <yes/no>':         ':book: allows or denies learning new messages',
+    'gcollect <yes/no>':        ':books: allows or denies learning new messages to contribute to the global model',
+    'actions <yes/no>':         ':candy: enables or disables "actions" such as giving out candies',
+    'reset':                    ':rotating_light: resets everything',
+    'autorate <rate>':          ':bar_chart: sets the automatic generation rate (one bot message per each <rate> normal ones +/- half of this value)',
+    'train <count>':            ':books: trains the model using the last <count> messages in this channel',
+    'ignore_bots <yes/no>':     ':robot: whether or not to ignore other bots, servers and webhooks',
+    'remove_mentions <yes/no>': ':mailbox: whether or not to remove mentions in generated messages. Those generated from the global model always have them removed'
 }
 
+# help embed
 HELP = discord.Embed(title='Deuterium commands', color=EMBED_COLOR)
 HELP.add_field(inline=False, name=':loudspeaker: Latest Announcement', value=ANNOUNCEMENT)
 
-HELP.add_field(inline=False, name=':exclamation: *All comands start with `/d `*', value='*ex.: `/d help`*')
+HELP.add_field(inline=False, name=':exclamation: *All comands start with `!!d `*', value='*ex.: `!!d help`*')
 
 HELP.add_field(inline=False, name='REGULAR COMMANDS', value='Can be executed by anybody')
 for c in HELP_CMDS_REGULAR:
@@ -153,12 +157,12 @@ PRIVACY.add_field(inline=False, name='3. DATA PROCESSING', value='''
 Deuterium processes every message it receives, both in authorized server channels and in direct messages. I should note, however, that before your message goes directly to the code I wrote, it's first received by the discord.py library, which I trust due to it being open source.
 When my code receives a direct message, it sends a simple response back and stops further processing.
 Else, if the message is received in a server channel:
-- if the message starts with `/d `, the bot treats it as a command and doesn't store it
+- if the message starts with `!!d `, the bot treats it as a command and doesn't store it
 - else, if this channel has its "collect" setting set to "yes", it trains the model on this message and saves the said model do disk
 - if this channel has its "global collect" setting set to "yes", it trains the global model on this message and saves the said model do disk''')
 PRIVACY.add_field(inline=False, name='4. DATA STORAGE', value='''
 Deuterium stores the following data:
-- Channel settings and statistics (is message collection allowed, the total number of collected messages, etc.). This data can be viewed using the `/d status` command
+- Channel settings and statistics (is message collection allowed, the total number of collected messages, etc.). This data can be viewed using the `!!d status` command
 - The local Markov chain model, which consists of a set of probabilities of a word coming after another word
 - The global Markov chain model, which stores content described above
 - Channel and user IDs
@@ -170,11 +174,10 @@ PRIVACY.add_field(inline=False, name='5. CONTACTING', value='''
 You can contact me regarding any issues through E-Mail (`portasynthinca3@gmail.com`)''')
 PRIVACY.add_field(inline=False, name='6. DATA REMOVAL', value='''
 Due to the nature of Markov chains, it's unfortunately not possible to remove a certain section of the data I store. Only the whole model can be reset.
-If you wish to reset the local model, you may use the `/d reset` command.
+If you wish to reset the local model, you may use the `!!d reset` command.
 If you wish to reset the global model, please contact me (see section `5. CONTACTING`) and provide explanation and proof of why you think that should happen.''')
 PRIVACY.add_field(inline=False, name='7. DATA DISCLOSURE', value='''
 I do not disclose collected data to any third parties. Furthermore, I do not look at it myself. The access to my server is properly secured, therefore it's unlikely that a potential hacker could gain access to the data.''')
-
 
 
 
@@ -189,14 +192,20 @@ TOKEN = os.environ['DEUT_TOKEN']
 if not os.path.exists('channels'):
     os.mkdir('channels')
 
+bot = Bot(command_prefix='!!d ', help_command=None)
+slash_prefix = bot.command_prefix[1:]
+
+
+
+
 # some global variables
 SELF_ID = None
 channels = {}
-chanel_timers = {}
+channel_timers = {}
 channel_limits = {}
 channel_locks = {}
-global_c_lock = threading.Lock()
 process = None
+global_c_lock = threading.Lock()
 
 # retrieves messages from a channel
 def get_msgs(channel, before, limit):
@@ -239,11 +248,6 @@ def channel_mood(id):
 async def channel_game_start(channel, author):
     chan_info = channels[channel.id]
 
-    # check if we're already playing
-    if 'rps_id' in chan_info:
-        await channel.send(RPS_ERROR.format(author.mention))
-        return
-
     # do we really want to play?
     mood = channel_mood(channel.id)
     if random.random() >= mood['pos_chance']:
@@ -277,7 +281,6 @@ async def channel_game_process(channel, msg, author):
     if 'rps_id' not in chan_info:
         return
     if chan_info['rps_id'] != author.id:
-        await channel.send(RPS_ERROR.format(author.mention))
         return
 
     bot_move = random.randint(0, 2)
@@ -301,14 +304,14 @@ def schedule_unload(id):
     if id == 0:
         return
 
-    timer = chanel_timers.pop(id, None)
+    timer = channel_timers.pop(id, None)
 
     if timer is not None:
         timer.cancel()
 
-    timer = threading.Timer(30, unload_channel, (id,))
+    timer = threading.Timer(60 * 10, unload_channel, (id,))
     timer.start()
-    chanel_timers[id] = timer
+    channel_timers[id] = timer
 
 def channel_lock(id):
     lock = channel_locks.pop(id, None)
@@ -322,16 +325,18 @@ def unload_channel(id):
     if id == 0:
         return
 
-    # prevent corruption
     with global_c_lock:
+        channel_timers.pop(id, None)
+        # bail the heck outta here while we haven't corrupted everything
+        if channel_lock(id).locked():
+            return
+
         save_channel(id)
         del channels[id]['model']
         del channels[id]
         gc.collect()
 
         print('X-X', id) # unloaded
-
-        chanel_timers.pop(id, None)
 
 # saves channel settings and model
 def save_channel(id):
@@ -359,7 +364,7 @@ async def load_channel(id, channel):
     with global_c_lock:
         with channel_lock(id):
             # abort any unloading timers
-            timer = chanel_timers.pop(id, None)
+            timer = channel_timers.pop(id, None)
             if timer is not None:
                 timer.cancel()
 
@@ -388,9 +393,11 @@ async def load_channel(id, channel):
                 'ustats':             {},
                 'next_gen_milestone': chan_info['autorate'],
                 'mood':               50,
-                'mood_title':         MOODS[2]['title']
+                'actions':            True,
+                'ignore_bots':        True,
+                'remove_mentions':    False
             }
-            for k,v in new_fields.items():
+            for k, v in new_fields.items():
                 if k not in chan_info:
                     chan_info[k] = v
 
@@ -423,13 +430,13 @@ async def generate_channel(id, act_id):
 
         generated_msg += ' UwU~' if bool(random.getrandbits(1)) else ' OwO~'
 
-    # remove mentions (incl. channels, etc.) from messages generated from the global model
-    if id == 0:
-        generated_msg = re.sub('<(@|&)!*[0-9]*>', '**[mention removed]**', generated_msg)
+    # remove mentions (incl. channels, etc.) from messages generated from the global model and/or if requested
+    if id == 0 or channels[act_id]['remove_mentions']:
+        generated_msg = re.sub('<(@|&|#)!*[0-9]*>', '**[mention removed]**', generated_msg)
 
     print(' G ', id)
 
-    return generated_msg
+    return generated_msg.replace('%', '"')
 
 # generates a message and sends it in a separate thread
 async def generate_channel_threaded(chan, cnt=1, id=-1):
@@ -454,7 +461,9 @@ def train(id, text_list):
 
                 for text in text_list:
                     # join period-separated sentences by a new line
+                    # and replace " with %
                     text = '\n'.join(text.split('.'))
+                    text = text.replace('"', '%')
 
                     # create a new model if it doesn't exist
                     if chan_info['model'] == None:
@@ -483,17 +492,16 @@ def train_on_prev(chan_id, limit):
 
 
 
-bot = Bot(command_prefix='/d ', help_command=None)
-
 def on_bot_exit():
     # Thank you
     # I'll say goodbye soon
     # Though it's the end of the world
     # Don't blame yourself, no
-    print('<-> SAVING CHANNELS, DON\'T INTERRUPT')
+    print(f'<-> SAVING {len(channels)} CHANNELS, DON\'T INTERRUPT')
     with global_c_lock:
         for chan_id in channels:
             save_channel(chan_id)
+    exit()
 
 def bot_presence_thread():
     loop = asyncio.new_event_loop()
@@ -516,6 +524,7 @@ async def on_ready():
     Thread(target=bot_presence_thread, name='Presence updater').start()
     atexit.register(on_bot_exit)
     process = psutil.Process(os.getpid())
+
     print('Everything OK!')
 
 @bot.command(pass_context=True, name='help')
@@ -559,11 +568,12 @@ async def scoreboard_cmd(ctx):
         embed.add_field(inline=False, name=f'#{str(i+1)}', value=f'<@{str(u)}> - **{str(c)}** messages')
 
     if len(top_u) == 0:
-        embed.add_field(inline=False, name=f'Empty', value='Enable message collection (`/d collect yes`) and talk for a while')
+        embed.add_field(inline=False, name=f'Empty', value='Enable message collection (`!!d collect yes`) and talk for a while')
     await ctx.send(embed=embed)
 
 @bot.command(pass_context=True, name='status')
 async def status_cmd(ctx):
+    id = ctx.message.channel.id
     chan_info = channels[ctx.message.channel.id]
     autorate = chan_info['autorate']
     embed = discord.Embed(title='Deuterium status', color=EMBED_COLOR)
@@ -574,7 +584,7 @@ async def status_cmd(ctx):
     embed.add_field(name=':1234: Messages added to the global model by everyone everywhere', value=str(channels[0]['collected']))
     embed.add_field(name=':new: Automatically sending messages after each',                  value=str('[disabled]' if autorate == 0 else autorate))
 
-    embed.add_field(name=':sparkles: Mood', value=f'{chan_info["mood_title"]} ({chan_info["mood"]}%)')
+    embed.add_field(name=':sparkles: Mood', value=f'{channel_mood(id)["title"]} ({chan_info["mood"]}%)')
     embed.add_field(name=':eyes: UwU mode', value='enabled' if chan_info['uwumode'] else 'disabled')
 
     await ctx.send(embed=embed)
@@ -642,6 +652,10 @@ async def ggen_cmd(ctx):
 
 @bot.command(pass_context=True, name='train')
 async def train_cmd(ctx, *args):
+    if not has_admin(ctx):
+        await ctx.send(ADMINISTRATIVE_C)
+        return
+
     if len(args) != 1:
         await ctx.send(ONE_ARG)
         return
@@ -664,9 +678,8 @@ def has_admin(ctx):
     author = ctx.message.author
     return author.guild_permissions.administrator
 
-@bot.command(pass_context=True, name='collect')
-async def collect_cmd(ctx, *args):
-    if not has_admin(ctx):
+async def yes_no_cmd(ctx, prop, admin, args):
+    if admin and not has_admin(ctx):
         await ctx.send(ADMINISTRATIVE_C)
         return
 
@@ -674,29 +687,32 @@ async def collect_cmd(ctx, *args):
         await ctx.send(ONE_ARG)
         return
 
-    collect = args[0]
-    if collect not in ['yes', 'no']:
+    inp = args[0]
+    if inp not in ['yes', 'no']:
         await ctx.send(INVALID_ARG)
     else:
-        channels[ctx.message.channel.id]['collect'] = True if collect == 'yes' else False
+        channels[ctx.message.channel.id][prop] = True if inp == 'yes' else False
         await ctx.send(SETS_UPD)
+
+@bot.command(pass_context=True, name='actions')
+async def actions_cmd(ctx, *args):
+    await yes_no_cmd(ctx, 'actions', True, args)
+
+@bot.command(pass_context=True, name='collect')
+async def collect_cmd(ctx, *args):
+    await yes_no_cmd(ctx, 'collect', True, args)
 
 @bot.command(pass_context=True, name='gcollect')
 async def gcollect_cmd(ctx, *args):
-    if not has_admin(ctx):
-        await ctx.send(ADMINISTRATIVE_C)
-        return
-        
-    if len(args) != 1:
-        await ctx.send(ONE_ARG)
-        return
+    await yes_no_cmd(ctx, 'gcollect', True, args)
 
-    collect = args[0]
-    if collect not in ['yes', 'no']:
-        await ctx.send(INVALID_ARG)
-    else:
-        channels[ctx.message.channel.id]['gcollect'] = True if collect == 'yes' else False
-        await ctx.send(SETS_UPD)
+@bot.command(pass_context=True, name='ignore_bots')
+async def ignore_bots_cmd(ctx, *args):
+    await yes_no_cmd(ctx, 'ignore_bots', True, args)
+
+@bot.command(pass_context=True, name='remove_mentions')
+async def remove_mentions_cmd(ctx, *args):
+    await yes_no_cmd(ctx, 'remove_mentions', True, args)
 
 @bot.command(pass_context=True, name='reset')
 async def reset_cmd(ctx):
@@ -710,7 +726,6 @@ async def reset_cmd(ctx):
     chan_info['total_msgs'] = 0
     chan_info['next_gen_milestone'] = 0
     chan_info['mood'] = 50
-    chan_info['mood_title'] = MOODS[2]['title']
     await ctx.send(RESET_SUCCESS)
 
 @bot.command(pass_context=True, name='autorate')
@@ -754,8 +769,8 @@ async def on_message(msg: discord.Message):
     global channels
     channel = msg.channel
 
-    # ignore bots
-    if msg.author.bot:
+    # ignore ourselves
+    if msg.author == bot.user:
         return
 
     # don't react to DMs
@@ -765,6 +780,10 @@ async def on_message(msg: discord.Message):
 
     # don't react to empty messages (if it's just a picture, or audio, etc.)
     if len(msg.content) == 0:
+        return
+
+    if msg.content == '/d help':
+        await msg.channel.send(NEW_PREFIX)
         return
 
     # load channel settings and model from the disk if available and needed
@@ -779,12 +798,31 @@ async def on_message(msg: discord.Message):
             'collect':   True,  'collected':  0,
             'autorate':  20,    'total_msgs': 0,
             'gcollect':  False, 'gcollected': 0,
-            'uwumode':   False, 'ustats':     {}
+            'uwumode':   False, 'ustats':     {},
+
+            'next_gen_milestone': 20,
+            'mood':               50,
+            'actions':            True,
+            'ignore_bots':        True,
+            'remove_mentions':    False
         }
         channels[chan_id] = chan_info
     
     chan_info = channels[chan_id]
     chan_info['total_msgs'] += 1
+
+    # unload the channel in 10s
+    try:
+        timer = channel_timers[chan_id]
+        timer.cancel()
+    except: pass
+    timer = threading.Timer(30, unload_channel, [chan_id])
+    #timer.start()
+    channel_timers[chan_id] = timer
+
+    # (optionally) ignore bots
+    if msg.author.bot and not chan_info['ignore_bots']:
+        return
 
     # check if it's a command
     if msg.content.startswith(bot.command_prefix):
@@ -811,23 +849,24 @@ async def on_message(msg: discord.Message):
 
     # react to mentions
     if bot.user in msg.mentions:
-        await channel.send(f'{msg.author.mention} {await generate_channel(chan_id, chan_id)}')
+        m = await generate_channel(chan_id, chan_id)
+        await channel.send(f'{msg.author.mention} {m}')
         return
 
     # mood logic
-    channel_add_mood(chan_id, random.randint(-2, 2))
+    channel_add_mood(chan_id, random.randint(-1, 2))
     mood = channel_mood(chan_id)
-    chan_info['mood_title'] = mood['title']
 
-    # suggest playing a game
-    if random.random() <= mood['suggest_chance']:
-        await channel.send(RPS_SUGGESTION.format(msg.author.mention))
-        return
+    if chan_info['actions']:
+        # suggest playing a game
+        if random.random() <= mood['suggest_chance']:
+            await channel.send(RPS_SUGGESTION.format(msg.author.mention))
+            return
 
-    # give a treat to the sender
-    if random.random() <= mood['treat_chance']:
-        await channel.send(f'Hey {msg.author.mention}! Have a {random.choice(mood["treats"])}')
-        return
+        # give a treat to the sender
+        if random.random() <= mood['treat_chance']:
+            await channel.send(f'Hey {msg.author.mention}! Have a {random.choice(mood["treats"])}')
+            return
 
     # process the game
     await channel_game_process(channel, msg, msg.author)
@@ -836,7 +875,7 @@ async def on_message(msg: discord.Message):
     rate = chan_info['autorate']
     if rate > 0 and chan_info['total_msgs'] >= chan_info['next_gen_milestone']:
         # set next milestone
-        qrate = rate / 4
+        qrate = rate // 4
         chan_info['next_gen_milestone'] = chan_info['total_msgs'] + random.randint(rate - qrate, rate + qrate)
 
         # generate a message
